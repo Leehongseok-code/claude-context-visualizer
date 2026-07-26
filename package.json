@@ -1,0 +1,29 @@
+{
+  "name": "claude-context-visualizer",
+  "displayName": "Claude Context Visualizer",
+  "description": "Visualize how Claude Code assembles its per-turn LLM context.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Visualization", "Other"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "claudeContext.visualize", "title": "Claude Context: Visualize" }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "test": "vitest run",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  }
+}
