@@ -4,7 +4,11 @@
   "description": "Visualize how Claude Code assembles its per-turn LLM context.",
   "version": "0.1.0",
   "publisher": "local",
-  "repository": "none",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Leehongseok-code/claude-context-visualizer.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
