@@ -9,8 +9,9 @@ export async function forEachLine(
     const stream = createReadStream(filePath);
     let buf = Buffer.alloc(0);
     let fileOffset = 0;
-    stream.on("data", (chunk: Buffer) => {
-      buf = Buffer.concat([buf, chunk]);
+    stream.on("data", (chunk: Buffer | string) => {
+      const b = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+      buf = Buffer.concat([buf, b]);
       let nl: number;
       while ((nl = buf.indexOf(0x0a)) !== -1) {
         const lineBuf = buf.subarray(0, nl);
@@ -70,7 +71,7 @@ export async function readTurn(filePath: string, turn: TurnIndex): Promise<RawRe
   const data: string = await new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     const stream = createReadStream(filePath, { start: turn.byteStart, end: turn.byteEnd - 1 });
-    stream.on("data", (c: Buffer) => chunks.push(c));
+    stream.on("data", (c: Buffer | string) => chunks.push(typeof c === "string" ? Buffer.from(c) : c));
     stream.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     stream.on("error", reject);
   });

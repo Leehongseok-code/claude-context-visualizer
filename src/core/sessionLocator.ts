@@ -7,8 +7,8 @@ async function firstRecordCwd(filePath: string): Promise<string | null> {
   return new Promise((resolve) => {
     const stream = createReadStream(filePath, { encoding: "utf8" });
     let buf = "";
-    stream.on("data", (chunk: string) => {
-      buf += chunk;
+    stream.on("data", (chunk: Buffer | string) => {
+      buf += String(chunk);
       let nl = buf.indexOf("\n");
       while (nl !== -1) {
         const line = buf.slice(0, nl);

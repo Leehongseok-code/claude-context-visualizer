@@ -51,4 +51,29 @@ describe("assembleTurn", () => {
     const skill = segs.find(s => s.category === "skill")!;
     expect(skill.source).toBe("skill:brainstorming");
   });
+
+  it("appends a claudeMd segment from a blueprint provider when no record produced one", () => {
+    const bpWithProvider: ConfigBlueprint = {
+      providers: [{ kind: "claudeMd", path: "/x/CLAUDE.md", summary: "", content: "rules" }],
+      mcpServers: [],
+    };
+    const segs = assembleTurn([], bpWithProvider, est);
+    const claudeMdSegs = segs.filter(s => s.category === "claudeMd");
+    expect(claudeMdSegs.length).toBe(1);
+    expect(claudeMdSegs[0].sourcePath).toBe("/x/CLAUDE.md");
+  });
+
+  it("cross-references sourcePath onto a record-produced claudeMd segment instead of duplicating", () => {
+    const bpWithProvider: ConfigBlueprint = {
+      providers: [{ kind: "claudeMd", path: "/x/CLAUDE.md", summary: "", content: "rules" }],
+      mcpServers: [],
+    };
+    const recs: RawRecord[] = [
+      { type: "user", message: { role: "user", content: "<claudeMd>rules here</claudeMd>" } },
+    ];
+    const segs = assembleTurn(recs, bpWithProvider, est);
+    const claudeMdSegs = segs.filter(s => s.category === "claudeMd");
+    expect(claudeMdSegs.length).toBe(1);
+    expect(claudeMdSegs[0].sourcePath).toBe("/x/CLAUDE.md");
+  });
 });

@@ -1,12 +1,19 @@
 import { ViewModel, categoryColor } from "../core/viewModel";
+import { STYLES } from "./styles";
 
 declare function acquireVsCodeApi(): { postMessage(msg: any): void };
 const vscodeApi = acquireVsCodeApi();
+
+const styleEl = document.createElement("style");
+styleEl.textContent = STYLES;
+document.head.appendChild(styleEl);
 
 window.addEventListener("message", (e) => {
   const msg = e.data;
   if (msg?.type === "render") render(msg.vm as ViewModel);
 });
+
+vscodeApi.postMessage({ type: "ready" });
 
 function render(vm: ViewModel) {
   const summary = document.getElementById("summary")!;

@@ -20,7 +20,9 @@ async function collectClaudeMd(
   });
   for (const line of content.split("\n")) {
     const m = line.trim().match(/^@(.+)$/);
-    if (m) await collectClaudeMd(join(dirname(abs), m[1].trim()), providers, seen);
+    if (m && /[/.]/.test(m[1].trim())) {
+      await collectClaudeMd(join(dirname(abs), m[1].trim()), providers, seen);
+    }
   }
 }
 

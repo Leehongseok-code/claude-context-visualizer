@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { homedir } from "os";
 import { join } from "path";
-import { readFileSync } from "fs";
+import { existsSync, statSync } from "fs";
 import { findSessionsForWorkspace } from "./core/sessionLocator";
 import { indexTurns, readTurn } from "./core/transcriptParser";
 import { scanBlueprint } from "./core/configScanner";
@@ -52,18 +52,22 @@ export function activate(context: vscode.ExtensionContext) {
       panel.webview.html = renderHtml(panel.webview, context);
       panel.webview.onDidReceiveMessage((msg) => {
         if (msg?.type === "openFile" && msg.path) {
+          if (!existsSync(msg.path) || !statSync(msg.path).isFile()) {
+            vscode.window.showWarningMessage("Cannot open: " + msg.path);
+            return;
+          }
           vscode.window.showTextDocument(vscode.Uri.file(msg.path));
+        } else if (msg?.type === "ready") {
+          panel.webview.postMessage({ type: "render", vm });
         }
       });
-      panel.webview.postMessage({ type: "render", vm });
     })
   );
 }
 
 function renderHtml(webview: vscode.Webview, ctx: vscode.ExtensionContext): string {
   const script = webview.asWebviewUri(vscode.Uri.file(join(ctx.extensionPath, "dist", "webview.js")));
-  const css = readFileSync(join(ctx.extensionPath, "src", "webview", "styles.css"), "utf8");
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${css}</style></head>
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
 <body><div id="summary"></div><div id="stack"></div><div id="drilldown"></div>
 <script src="${script}"></script></body></html>`;
 }
