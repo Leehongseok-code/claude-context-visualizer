@@ -1,0 +1,5 @@
+{"type":"attachment","attachment":{"type":"hook_success","hookName":"SessionStart","stdout":"{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"HOOK BODY ALPHA\"}}"},"cwd":"/tmp/ws","sessionId":"s1","timestamp":"2026-07-01T00:00:00Z"}
+{"type":"user","promptId":"p1","isMeta":false,"cwd":"/tmp/ws","sessionId":"s1","timestamp":"2026-07-01T00:00:01Z","message":{"role":"user","content":"first question about widgets"}}
+{"type":"assistant","cwd":"/tmp/ws","sessionId":"s1","timestamp":"2026-07-01T00:00:02Z","message":{"role":"assistant","model":"claude-opus-5","content":[{"type":"thinking","thinking":"reasoning one"},{"type":"text","text":"answer one"}]}}
+{"type":"user","promptId":"p2","isMeta":false,"cwd":"/tmp/ws","sessionId":"s1","timestamp":"2026-07-01T00:00:03Z","message":{"role":"user","content":"두번째 질문입니다"}}
+{"type":"assistant","attributionSkill":"brainstorming","cwd":"/tmp/ws","sessionId":"s1","timestamp":"2026-07-01T00:00:04Z","message":{"role":"assistant","content":[{"type":"text","text":"answer two"}]}}
