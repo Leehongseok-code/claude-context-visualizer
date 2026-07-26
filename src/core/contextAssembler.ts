@@ -1,6 +1,7 @@
 import { basename } from "path";
 import { RawRecord, Segment, SegmentCategory, ConfigBlueprint, ContextGroup, CompactMetadata } from "./types";
 import { TokenEstimator } from "./tokenEstimator";
+import { PayloadCalibration, BUILTIN_CALIBRATION } from "./payloadModel";
 
 function decodeHook(att: any): { name: string; text: string } {
   const name = att.hookName ?? "unknown";
@@ -35,20 +36,35 @@ function prettyInput(input: any): string {
   try { return JSON.stringify(input, null, 2); } catch { return String(input); }
 }
 
+// An image block costs image tokens, not text tokens. Anthropic bills an image at
+// roughly (width*height)/750 tokens, capped ~1600; without dimensions a screenshot
+// sits around this. Counting its base64 as text overstated a single screenshot by
+// ~150,000 tokens.
+const IMAGE_TOKEN_ESTIMATE = 1500;
+
+interface ToolResultContent { text: string; imageCount: number; }
+
 // tool_result content may be a string, an Anthropic content-block array, or an object.
-function toolResultText(blockContent: any, toolUseResult: any): string {
+function toolResultContent(blockContent: any, toolUseResult: any): ToolResultContent {
+  let imageCount = 0;
+  const render = (x: any): string => {
+    if (typeof x === "string") return x;
+    if (x?.type === "image") { imageCount++; return "[image]"; }
+    if (typeof x?.text === "string") return x.text;
+    try { return JSON.stringify(x); } catch { return String(x); }
+  };
+
   let s: string;
   if (typeof blockContent === "string") s = blockContent;
-  else if (Array.isArray(blockContent)) {
-    s = blockContent.map((x: any) => (typeof x === "string" ? x : x?.text ?? JSON.stringify(x))).join("\n");
-  } else if (blockContent != null) {
-    try { s = JSON.stringify(blockContent, null, 2); } catch { s = String(blockContent); }
-  } else s = "";
-  if (s.trim()) return s;
-  if (toolUseResult != null) {
-    try { return JSON.stringify(toolUseResult, null, 2); } catch { return String(toolUseResult); }
+  else if (Array.isArray(blockContent)) s = blockContent.map(render).join("\n");
+  else if (blockContent != null) s = render(blockContent);
+  else s = "";
+
+  if (!s.trim() && toolUseResult != null) {
+    if (Array.isArray(toolUseResult)) s = toolUseResult.map(render).join("\n");
+    else s = render(toolUseResult);
   }
-  return s;
+  return { text: s, imageCount };
 }
 
 type Mk = (category: SegmentCategory, source: string, rawText: string, opts?: Partial<Segment>) => Segment;
@@ -97,8 +113,13 @@ function classifyRecord(rec: RawRecord, mk: Mk, toolNameById: Map<string, string
         if (b?.type === "tool_result") {
           const name = b.tool_use_id ? toolNameById.get(b.tool_use_id) : undefined;
           const label = name ? toolSource(name, undefined).replace(/^tool:|^skill:|^mcp:/, "") : "tool";
-          const text = toolResultText(b.content, rec.toolUseResult);
-          out.push(mk("toolResult", `result:${name ? label : "tool"}`, text));
+          const { text, imageCount } = toolResultContent(b.content, rec.toolUseResult);
+          const seg = mk("toolResult", `result:${name ? label : "tool"}`, text);
+          if (imageCount > 0) {
+            seg.tokenEstimate += imageCount * IMAGE_TOKEN_ESTIMATE;
+            seg.note = `Includes ${imageCount} image${imageCount > 1 ? "s" : ""} — billed as image tokens (~${IMAGE_TOKEN_ESTIMATE.toLocaleString()} each), not as base64 text.`;
+          }
+          out.push(seg);
         } else if (b?.type === "text") {
           out.push(applyAttribution(mk("user", "user", b.text ?? ""), rec));
         }
@@ -116,15 +137,17 @@ function classifyRecord(rec: RawRecord, mk: Mk, toolNameById: Map<string, string
   return out;
 }
 
-function estimatedHeader(mk: Mk, blueprint: ConfigBlueprint): Segment[] {
+function estimatedHeader(mk: Mk, blueprint: ConfigBlueprint, est: TokenEstimator, cal: PayloadCalibration): Segment[] {
+  // Sizes come from a real captured request (see payloadModel.ts), not a guess.
+  const src = cal.source === "calibrated" ? "measured on this machine" : "measured from a reference capture";
   return [
     mk("baseSystemPrompt", "base-system-prompt", "", {
-      estimated: true, tokenEstimate: 2500,
-      note: "Base system prompt — constructed by the CLI at runtime, not captured in the transcript (rough estimate).",
+      estimated: true, tokenEstimate: Math.round(cal.systemPromptChars * 0.27),
+      note: `Base system prompt — sent on every request but never written to the transcript. ~${cal.systemPromptChars.toLocaleString()} chars (${src}).`,
     }),
     mk("toolDefinitions", "tool-definitions", "", {
-      estimated: true, tokenEstimate: blueprint.mcpServers.length * 250,
-      note: "Tool JSON schemas — not captured; estimated from MCP server count (~250 tokens/server).",
+      estimated: true, tokenEstimate: Math.round(cal.toolSchemaChars * 0.27),
+      note: `Tool JSON schemas for ${cal.toolCount} tools — sent on every request, never in the transcript. ~${cal.toolSchemaChars.toLocaleString()} chars (${src}).`,
     }),
   ];
 }
@@ -145,13 +168,28 @@ function applyBlueprint(segs: Segment[], blueprint: ConfigBlueprint, mk: Mk, gro
 }
 
 // Single-turn view: only the selected turn's own records (fast; no prior history).
-export function assembleTurn(records: RawRecord[], blueprint: ConfigBlueprint, est: TokenEstimator): Segment[] {
+export function assembleTurn(
+  records: RawRecord[], blueprint: ConfigBlueprint, est: TokenEstimator,
+  cal: PayloadCalibration = BUILTIN_CALIBRATION
+): Segment[] {
   const mk = makeMk(est);
   const toolNameById = buildToolNameMap(records);
-  const segs: Segment[] = [...estimatedHeader(mk, blueprint)];
+  const segs: Segment[] = [...estimatedHeader(mk, blueprint, est, cal)];
   for (const rec of records) segs.push(...classifyRecord(rec, mk, toolNameById));
   applyBlueprint(segs, blueprint, mk);
+  markStrippedThinking(segs);
   return segs;
+}
+
+// context_management.clear_thinking removes thinking blocks from the request, so
+// they are shown but must not count toward the input context.
+function markStrippedThinking(segs: Segment[]): void {
+  for (const s of segs) {
+    if (s.category === "thinking") {
+      s.tokenEstimate = 0;
+      s.note = "Stripped from the request by context_management.clear_thinking — shown for reference, not counted as input.";
+    }
+  }
 }
 
 export interface ContextUsage {
@@ -209,7 +247,10 @@ function fmt(n?: number): string {
 // Full-context view: the exact ordered message thread Claude received (built by
 // walking parentUuid), grouped by turn, with compaction summaries rendered as
 // first-class segments carrying the real compaction metadata.
-export function assembleContext(records: RawRecord[], blueprint: ConfigBlueprint, est: TokenEstimator): AssembledContext {
+export function assembleContext(
+  records: RawRecord[], blueprint: ConfigBlueprint, est: TokenEstimator,
+  cal: PayloadCalibration = BUILTIN_CALIBRATION
+): AssembledContext {
   const mk = makeMk(est);
   const toolNameById = buildToolNameMap(records);
   const segments: Segment[] = [];
@@ -217,7 +258,7 @@ export function assembleContext(records: RawRecord[], blueprint: ConfigBlueprint
 
   const SYS = "g-system";
   groups.push({ id: SYS, label: "System & config", isHistory: false, tokens: 0 });
-  for (const s of estimatedHeader(mk, blueprint)) { s.groupId = SYS; segments.push(s); }
+  for (const s of estimatedHeader(mk, blueprint, est, cal)) { s.groupId = SYS; segments.push(s); }
 
   let curGroup: ContextGroup | null = null;
   let pendingCompaction: CompactMetadata | undefined;
@@ -260,6 +301,7 @@ export function assembleContext(records: RawRecord[], blueprint: ConfigBlueprint
   }
 
   applyBlueprint(segments, blueprint, mk, SYS);
+  markStrippedThinking(segments);
 
   // The last real turn group is the "current" turn; everything before it is history.
   const lastTurn = [...groups].reverse().find((g) => g.id.startsWith("g-turn-"));

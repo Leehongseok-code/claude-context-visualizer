@@ -12,7 +12,10 @@ describe("assembleTurn", () => {
     expect(segs[0].category).toBe("baseSystemPrompt");
     expect(segs[0].estimated).toBe(true);
     expect(segs[1].category).toBe("toolDefinitions");
-    expect(segs[1].tokenEstimate).toBe(500); // 2 servers * 250
+    // Sized from a real captured request (~85,896 chars of tool schemas), not from
+    // the MCP server count — a proxy capture showed the old per-server guess was wrong.
+    expect(segs[1].estimated).toBe(true);
+    expect(segs[1].tokenEstimate).toBeGreaterThan(15000);
   });
 
   it("decodes a hook attachment into a hook segment", () => {

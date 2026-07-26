@@ -67,6 +67,32 @@ describe("assembleContext", () => {
     expect(usage!.output).toBe(42);
   });
 
+  it("sizes the system prompt and tool schemas from the measured capture, not a guess", async () => {
+    const meta = await indexByUuid(FIX);
+    const recs = await buildThread(FIX, meta, "A2");
+    const { segments } = assembleContext(recs, bp, est);
+    const sys = segments.find((s) => s.category === "baseSystemPrompt")!;
+    const tools = segments.find((s) => s.category === "toolDefinitions")!;
+    // 9,733 and 85,896 chars measured from a real captured request
+    expect(sys.tokenEstimate).toBeGreaterThan(2000);
+    expect(tools.tokenEstimate).toBeGreaterThan(15000); // ~20k tokens, not 0
+    expect(tools.note).toContain("85,896");
+    // tool schemas dwarf the system prompt — the old estimate had this backwards
+    expect(tools.tokenEstimate).toBeGreaterThan(sys.tokenEstimate * 5);
+  });
+
+  it("does not count thinking as input (stripped by context_management)", async () => {
+    const meta = await indexByUuid(FIX);
+    const recs = await buildThread(FIX, meta, "A2");
+    const { segments } = assembleContext(recs, bp, est);
+    const thinking = segments.filter((s) => s.category === "thinking");
+    expect(thinking.length).toBeGreaterThan(0);
+    for (const t of thinking) {
+      expect(t.tokenEstimate).toBe(0);
+      expect(t.note).toContain("clear_thinking");
+    }
+  });
+
   it("still prepends the estimated base prompt + tool definitions in the system group", async () => {
     const meta = await indexByUuid(FIX);
     const recs = await buildThread(FIX, meta, "A2");
