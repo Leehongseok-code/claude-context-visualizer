@@ -26,6 +26,7 @@ let vm: ViewModel | null = null;
 let selectedId: string | null = null;
 let wasteBySeg: Record<string, string[]> = {};
 let rawMode = false; // markdown toggle: false = rendered, true = raw
+const hidden = new Set<string>(); // category filters (persist across turns)
 
 window.addEventListener("message", (e) => {
   const msg = e.data;
@@ -158,8 +159,27 @@ function renderContext(view: HTMLElement) {
   renderHeader(vm);
   renderBar(vm);
   renderList(vm);
-  const largest = [...vm.segments].sort((a, b) => b.tokenEstimate - a.tokenEstimate)[0];
+  selectFirstVisible(vm);
+}
+
+function visibleSegments(v: ViewModel) {
+  return v.segments.filter((s) => !hidden.has(s.category));
+}
+
+function selectFirstVisible(v: ViewModel) {
+  const vis = visibleSegments(v);
+  const largest = [...vis].sort((a, b) => b.tokenEstimate - a.tokenEstimate)[0];
   if (largest) select(largest.id);
+  else document.getElementById("detail")!.innerHTML = `<span class="muted">All types filtered out.</span>`;
+}
+
+function toggleCategory(cat: string) {
+  if (hidden.has(cat)) hidden.delete(cat); else hidden.add(cat);
+  if (!vm) return;
+  renderBar(vm);
+  renderList(vm);
+  const sel = selectedId ? vm.segments.find((s) => s.id === selectedId) : undefined;
+  if (!sel || hidden.has(sel.category)) selectFirstVisible(vm);
 }
 
 function renderHeader(v: ViewModel) {
@@ -178,7 +198,7 @@ function renderBar(v: ViewModel) {
   const total = Math.max(1, v.totalTokens);
   for (const c of v.byCategory) {
     const seg = document.createElement("div");
-    seg.className = "bar-seg";
+    seg.className = "bar-seg" + (hidden.has(c.category) ? " dim" : "");
     seg.style.width = `${(c.tokens / total) * 100}%`;
     seg.style.background = categoryColor(c.category);
     seg.title = `${c.category}: ${c.tokens.toLocaleString()} (${pct(c.tokens)})`;
@@ -186,17 +206,31 @@ function renderBar(v: ViewModel) {
   }
   const legend = document.createElement("div");
   legend.className = "legend";
-  legend.innerHTML = v.byCategory
-    .map((c) => `<span class="chip"><i style="background:${categoryColor(c.category)}"></i>${c.category} · ${c.tokens.toLocaleString()}</span>`)
-    .join("");
+  legend.innerHTML =
+    v.byCategory
+      .map((c) =>
+        `<span class="chip filter${hidden.has(c.category) ? " off" : ""}" data-cat="${c.category}" title="click to show/hide">` +
+        `<i style="background:${categoryColor(c.category)}"></i>${c.category} · ${c.tokens.toLocaleString()}</span>`
+      )
+      .join("") +
+    (hidden.size ? `<span class="chip reset" data-cat="__all__" title="show all types">↺ show all</span>` : "");
   bar.appendChild(legend);
+  legend.querySelectorAll<HTMLElement>("[data-cat]").forEach((el) => {
+    el.onclick = () => {
+      const cat = el.dataset.cat!;
+      if (cat === "__all__") { hidden.clear(); if (vm) { renderBar(vm); renderList(vm); } }
+      else toggleCategory(cat);
+    };
+  });
 }
 
 function renderList(v: ViewModel) {
   const list = document.getElementById("stack")!;
   list.innerHTML = "";
-  const maxTok = Math.max(1, ...v.segments.map((s) => s.tokenEstimate));
-  for (const s of v.segments) {
+  const vis = visibleSegments(v);
+  if (vis.length === 0) { list.innerHTML = `<div class="muted" style="padding:8px">No segments — all types filtered out.</div>`; return; }
+  const maxTok = Math.max(1, ...vis.map((s) => s.tokenEstimate));
+  for (const s of vis) {
     const row = document.createElement("div");
     row.className = "row" + (s.estimated ? " estimated" : "");
     row.dataset.id = s.id;

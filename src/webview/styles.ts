@@ -95,11 +95,17 @@ body {
 
 /* proportional composition bar */
 .bar { display: flex; width: 100%; height: 14px; border-radius: 7px; overflow: hidden; border: 1px solid var(--border); }
-.bar-seg { height: 100%; transition: filter .15s; }
+.bar-seg { height: 100%; transition: filter .15s, opacity .15s; }
 .bar-seg:hover { filter: brightness(1.2); }
-.legend { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 10px 0 4px; }
+.bar-seg.dim { opacity: 0.18; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 10px; margin: 10px 0 4px; }
 .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); }
 .chip i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.chip.filter { cursor: pointer; user-select: none; padding: 2px 7px; border-radius: 999px; border: 1px solid transparent; }
+.chip.filter:hover { border-color: var(--border); }
+.chip.filter.off { opacity: 0.45; text-decoration: line-through; }
+.chip.filter.off i { filter: grayscale(1); }
+.chip.reset { cursor: pointer; user-select: none; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--vscode-textLink-foreground, #3794ff); }
 
 /* two panes */
 .panes { display: grid; grid-template-columns: minmax(240px, 40%) 1fr; gap: 14px; margin-top: 12px; align-items: start; }
