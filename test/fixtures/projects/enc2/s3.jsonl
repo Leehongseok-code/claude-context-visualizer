@@ -1,0 +1,2 @@
+{"type":"mode","data":"test"}
+{"type":"user","promptId":"p2","cwd":"/tmp/target-ws","sessionId":"s3","message":{"role":"user","content":"hello"}}
