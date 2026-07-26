@@ -248,12 +248,16 @@ function renderBar(v: ViewModel) {
         `<i style="background:${categoryColor(c.category)}"></i>${c.category} · ${c.tokens.toLocaleString()}</span>`
       )
       .join("") +
-    (hidden.size ? `<span class="chip reset" data-cat="__all__" title="show all types">↺ show all</span>` : "");
+    (hidden.size ? `<span class="chip reset" data-cat="__all__" title="show all types">↺ show all</span>` : "") +
+    (hidden.size < v.byCategory.length ? `<span class="chip reset" data-cat="__none__" title="hide all types, then pick the ones you want">⊘ hide all</span>` : "");
   legend.querySelectorAll<HTMLElement>("[data-cat]").forEach((el) => {
     el.onclick = () => {
       const cat = el.dataset.cat!;
-      if (cat === "__all__") { hidden.clear(); if (vm) { renderBar(vm); renderList(vm); } }
-      else toggleCategory(cat);
+      if (cat === "__all__" || cat === "__none__") {
+        hidden.clear();
+        if (cat === "__none__" && vm) for (const c of vm.byCategory) hidden.add(c.category);
+        if (vm) { renderBar(vm); renderList(vm); selectFirstVisible(vm); }
+      } else toggleCategory(cat);
     };
   });
 }
