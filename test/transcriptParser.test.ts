@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { join } from "path";
-import { indexTurns, readTurn } from "../src/core/transcriptParser";
+import { indexTurns, readTurn, firstPromptPreview } from "../src/core/transcriptParser";
 
 const FIX = join(__dirname, "fixtures", "sample.jsonl");
 
@@ -24,5 +24,9 @@ describe("transcriptParser", () => {
     const recs = await readTurn(FIX, turns[1]);
     expect(recs.some(r => r.attributionSkill === "brainstorming")).toBe(true);
     expect(recs.some(r => r.promptId === "p1")).toBe(false);
+  });
+  it("firstPromptPreview returns the first real user prompt", async () => {
+    const preview = await firstPromptPreview(FIX);
+    expect(preview).toContain("first question about widgets");
   });
 });

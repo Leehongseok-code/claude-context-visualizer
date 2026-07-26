@@ -12,7 +12,7 @@ document.head.appendChild(styleEl);
 
 // ---- state ----
 type Mode = "sessions" | "turns" | "context";
-interface SessionMeta { id: string; mtimeMs: number; }
+interface SessionMeta { id: string; mtimeMs: number; preview?: string; }
 interface TurnMeta { turn: number; promptPreview: string; timestamp?: string; }
 
 let mode: Mode = "sessions";
@@ -92,9 +92,11 @@ function renderSessions(view: HTMLElement) {
     sessions
       .map(
         (s) =>
-          `<div class="pl-row" data-id="${escapeHtml(s.id)}">` +
-          `<span class="pl-main">${escapeHtml(shortId(s.id))}</span>` +
-          `<span class="pl-sub">${new Date(s.mtimeMs).toLocaleString()}</span>` +
+          `<div class="pl-row pl-row-2" data-id="${escapeHtml(s.id)}">` +
+          `<div class="pl-col">` +
+          `<span class="pl-main">${escapeHtml(cleanPreview(s.preview) || "(no user prompt)")}</span>` +
+          `<span class="pl-sub">${escapeHtml(shortId(s.id))} · ${new Date(s.mtimeMs).toLocaleString()}</span>` +
+          `</div>` +
           `<span class="pl-arrow">▸</span>` +
           `</div>`
       )
@@ -280,6 +282,11 @@ function pct(tokens: number): string {
   return ((tokens / vm.totalTokens) * 100).toFixed(1) + "%";
 }
 function shortId(id: string): string { return id.length > 12 ? id.slice(0, 8) + "…" : id; }
+// Tidy up slash-command / caveat wrappers so the session preview reads cleanly.
+function cleanPreview(t?: string): string {
+  if (!t) return "";
+  return t.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
 function flagIcon(kind: string): string {
   return kind === "repeated" ? "♻" : kind === "large" ? "▲" : kind === "estimated" ? "≈" : "⚠";
 }

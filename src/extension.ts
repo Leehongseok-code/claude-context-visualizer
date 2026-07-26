@@ -3,7 +3,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { existsSync, statSync } from "fs";
 import { findSessionsForWorkspace } from "./core/sessionLocator";
-import { indexTurns, readTurn } from "./core/transcriptParser";
+import { indexTurns, readTurn, firstPromptPreview } from "./core/transcriptParser";
 import { scanBlueprint } from "./core/configScanner";
 import { assembleTurn } from "./core/contextAssembler";
 import { buildViewModel } from "./core/viewModel";
@@ -40,7 +40,11 @@ export function activate(context: vscode.ExtensionContext) {
         if (msg?.type === "ready") {
           panel.webview.postMessage({
             type: "sessions",
-            sessions: sessions.map(s => ({ id: s.sessionId, mtimeMs: s.mtimeMs })),
+            sessions: await Promise.all(sessions.map(async s => ({
+              id: s.sessionId,
+              mtimeMs: s.mtimeMs,
+              preview: await firstPromptPreview(s.filePath),
+            }))),
           });
         } else if (msg?.type === "listTurns") {
           const turns = await getTurns(String(msg.sessionId));

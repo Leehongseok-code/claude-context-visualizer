@@ -52,6 +52,10 @@ body {
 .pl-main { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pl-sub { color: var(--muted); font-size: 11px; white-space: nowrap; }
 .pl-arrow { color: var(--muted); }
+.pl-row-2 { align-items: center; }
+.pl-col { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.pl-col .pl-main { font-weight: 600; }
+.pl-col .pl-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* turn stepper (context view) */
 .stepper { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }

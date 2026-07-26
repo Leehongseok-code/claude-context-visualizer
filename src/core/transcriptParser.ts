@@ -67,6 +67,44 @@ export async function indexTurns(filePath: string): Promise<TurnIndex[]> {
   return turns;
 }
 
+// A cheap one-line summary of what a session is about: its first real user
+// prompt. Streams from the top and stops as soon as one is found, so it stays
+// fast even for very large transcripts.
+export async function firstPromptPreview(filePath: string): Promise<string> {
+  return new Promise((resolve) => {
+    const stream = createReadStream(filePath, { encoding: "utf8" });
+    let buf = "";
+    let settled = false;
+    const finish = (v: string) => {
+      if (settled) return;
+      settled = true;
+      try { stream.destroy(); } catch { /* already closed */ }
+      resolve(v);
+    };
+    const consume = (line: string): boolean => {
+      if (!line.trim()) return false;
+      let rec: RawRecord;
+      try { rec = JSON.parse(line); } catch { return false; }
+      if (rec.type === "user" && rec.promptId && rec.isMeta !== true) {
+        const p = userPreview(rec);
+        if (p) { finish(p); return true; }
+      }
+      return false;
+    };
+    stream.on("data", (chunk: Buffer | string) => {
+      buf += String(chunk);
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) !== -1) {
+        const line = buf.slice(0, nl);
+        buf = buf.slice(nl + 1);
+        if (consume(line)) return;
+      }
+    });
+    stream.on("end", () => { if (!settled) { consume(buf); finish(""); } });
+    stream.on("error", () => finish(""));
+  });
+}
+
 export async function readTurn(filePath: string, turn: TurnIndex): Promise<RawRecord[]> {
   const data: string = await new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
