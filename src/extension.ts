@@ -3,12 +3,12 @@ import { homedir } from "os";
 import { join } from "path";
 import { existsSync, statSync } from "fs";
 import { findSessionsForWorkspace } from "./core/sessionLocator";
-import { indexTurns, readTurn, firstPromptPreview } from "./core/transcriptParser";
+import { indexTurns, readTurn, firstPromptPreview, indexByUuid, buildThread } from "./core/transcriptParser";
 import { scanBlueprint } from "./core/configScanner";
-import { assembleTurn } from "./core/contextAssembler";
+import { assembleTurn, assembleContext } from "./core/contextAssembler";
 import { buildViewModel } from "./core/viewModel";
 import { HeuristicTokenEstimator } from "./core/tokenEstimator";
-import { TurnIndex, SessionInfo } from "./core/types";
+import { TurnIndex, SessionInfo, UuidMeta } from "./core/types";
 
 export function activate(context: vscode.ExtensionContext) {
   const est = new HeuristicTokenEstimator();
@@ -22,6 +22,7 @@ export function activate(context: vscode.ExtensionContext) {
       const sessions = await findSessionsForWorkspace(ws, join(homedir(), ".claude", "projects"));
       const byId = new Map<string, SessionInfo>(sessions.map(s => [s.sessionId, s]));
       const turnsCache = new Map<string, TurnIndex[]>();
+      const uuidCache = new Map<string, Map<string, UuidMeta>>();
 
       async function getTurns(sessionId: string): Promise<TurnIndex[]> {
         if (turnsCache.has(sessionId)) return turnsCache.get(sessionId)!;
@@ -29,6 +30,14 @@ export function activate(context: vscode.ExtensionContext) {
         const turns = s ? await indexTurns(s.filePath) : [];
         turnsCache.set(sessionId, turns);
         return turns;
+      }
+
+      async function getUuidMeta(sessionId: string): Promise<Map<string, UuidMeta>> {
+        if (uuidCache.has(sessionId)) return uuidCache.get(sessionId)!;
+        const s = byId.get(sessionId);
+        const meta = s ? await indexByUuid(s.filePath) : new Map<string, UuidMeta>();
+        uuidCache.set(sessionId, meta);
+        return meta;
       }
 
       const panel = vscode.window.createWebviewPanel(
@@ -56,25 +65,31 @@ export function activate(context: vscode.ExtensionContext) {
         } else if (msg?.type === "loadTurn") {
           const sessionId: string | null = msg.sessionId ?? null;
           const turnIdx = Number(msg.turn);
+          const mode: "turn" | "context" = msg.mode === "turn" ? "turn" : "context"; // default: full context
           let segments;
           let prev;
+          let groups;
+          let usage;
           let totalTurns = 0;
           if (sessionId && byId.has(sessionId)) {
             const s = byId.get(sessionId)!;
             const turns = await getTurns(sessionId);
             totalTurns = turns.length;
-            if (turns[turnIdx]) {
-              const cur = await readTurn(s.filePath, turns[turnIdx]);
+            const t = turns[turnIdx];
+            if (t && mode === "context" && t.uuid) {
+              const meta = await getUuidMeta(sessionId);
+              const thread = await buildThread(s.filePath, meta, t.uuid);
+              const ctx = assembleContext(thread, blueprint, est);
+              segments = ctx.segments; groups = ctx.groups; usage = ctx.usage;
+            } else if (t) {
+              const cur = await readTurn(s.filePath, t);
               segments = assembleTurn(cur, blueprint, est);
-              if (turnIdx > 0) {
-                const p = await readTurn(s.filePath, turns[turnIdx - 1]);
-                prev = assembleTurn(p, blueprint, est);
-              }
+              if (turnIdx > 0) prev = assembleTurn(await readTurn(s.filePath, turns[turnIdx - 1]), blueprint, est);
             }
           }
           if (!segments) segments = assembleTurn([], blueprint, est); // blueprint fallback
           const vm = buildViewModel(segments, prev);
-          panel.webview.postMessage({ type: "render", vm, sessionId, turn: turnIdx, totalTurns });
+          panel.webview.postMessage({ type: "render", vm, groups, usage, mode, sessionId, turn: turnIdx, totalTurns });
         } else if (msg?.type === "openFile" && msg.path) {
           if (!existsSync(msg.path) || !statSync(msg.path).isFile()) {
             vscode.window.showWarningMessage("Cannot open: " + msg.path);

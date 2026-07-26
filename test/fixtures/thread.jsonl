@@ -1,0 +1,8 @@
+{"type":"user","uuid":"m1","parentUuid":null,"promptId":"pm1","message":{"role":"user","content":"OLD work before compaction"}}
+{"type":"assistant","uuid":"m2","parentUuid":"m1","message":{"role":"assistant","content":[{"type":"text","text":"old answer"}]}}
+{"type":"system","subtype":"compact_boundary","uuid":"CB","parentUuid":null,"logicalParentUuid":"m2","compactMetadata":{"trigger":"auto","preTokens":738375,"postTokens":31652,"cumulativeDroppedTokens":706723},"content":"Conversation compacted"}
+{"type":"user","uuid":"SUM","parentUuid":"CB","isCompactSummary":true,"message":{"role":"user","content":"This session is being continued from a previous conversation that ran out of context.\n\nSummary: earlier work on the parser."}}
+{"type":"user","uuid":"U1","parentUuid":"SUM","promptId":"p1","message":{"role":"user","content":"first task after compaction"}}
+{"type":"assistant","uuid":"A1","parentUuid":"U1","message":{"role":"assistant","content":[{"type":"text","text":"doing first task"}]}}
+{"type":"user","uuid":"U2","parentUuid":"A1","promptId":"p2","message":{"role":"user","content":"second task now"}}
+{"type":"assistant","uuid":"A2","parentUuid":"U2","message":{"role":"assistant","content":[{"type":"thinking","thinking":"hmm"},{"type":"text","text":"done"}],"usage":{"input_tokens":5,"cache_creation_input_tokens":1200,"cache_read_input_tokens":30000,"output_tokens":42}}}

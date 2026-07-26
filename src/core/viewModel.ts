@@ -4,7 +4,7 @@ const COLORS: Record<SegmentCategory, string> = {
   baseSystemPrompt: "#6b7280", toolDefinitions: "#9ca3af", claudeMd: "#2563eb",
   skill: "#7c3aed", hook: "#dc2626", memory: "#0d9488", mcpInstructions: "#d97706",
   toolUse: "#ca8a04", toolResult: "#65a30d", user: "#0891b2", assistant: "#4f46e5",
-  thinking: "#a855f7", systemReminder: "#db2777",
+  thinking: "#a855f7", systemReminder: "#db2777", compactionSummary: "#e11d48",
 };
 
 export function categoryColor(cat: SegmentCategory): string {

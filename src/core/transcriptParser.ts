@@ -1,5 +1,5 @@
 import { createReadStream } from "fs";
-import { RawRecord, TurnIndex } from "./types";
+import { RawRecord, TurnIndex, UuidMeta } from "./types";
 
 export async function forEachLine(
   filePath: string,
@@ -69,12 +69,61 @@ export async function indexTurns(filePath: string): Promise<TurnIndex[]> {
         byteEnd,
         promptPreview: userPreview(rec),
         timestamp: rec.timestamp,
+        uuid: rec.uuid,
       };
     }
-    if (cur) cur.byteEnd = byteEnd;
+    if (cur) {
+      cur.byteEnd = byteEnd;
+      if (rec.uuid) cur.uuid = rec.uuid; // track the turn's last record = the leaf to reconstruct from
+    }
   });
   if (cur) turns.push(cur);
   return turns;
+}
+
+// One streaming pass building uuid -> { parentUuid, byte range }. Used to walk the
+// parentUuid thread — the exact ordered message sequence Claude received.
+export async function indexByUuid(filePath: string): Promise<Map<string, UuidMeta>> {
+  const map = new Map<string, UuidMeta>();
+  await forEachLine(filePath, (line, byteStart, byteEnd) => {
+    if (!line.trim()) return;
+    let rec: RawRecord;
+    try { rec = JSON.parse(line); } catch { return; }
+    if (rec.uuid) map.set(rec.uuid, { parentUuid: rec.parentUuid ?? null, byteStart, byteEnd });
+  });
+  return map;
+}
+
+// Walk parentUuid from a leaf to the root (or a compact_boundary, whose parentUuid is
+// null) and return the uuids in root->leaf order. This is exactly the context Claude
+// received at that leaf: compaction summary + preserved messages + later turns, with
+// dropped/summarized history and sidechains naturally excluded (they are off-thread).
+export function threadUuids(uuidMeta: Map<string, UuidMeta>, leafUuid: string): string[] {
+  const chain: string[] = [];
+  const seen = new Set<string>();
+  let cur: string | null = leafUuid;
+  while (cur && uuidMeta.has(cur) && !seen.has(cur)) {
+    chain.push(cur);
+    seen.add(cur);
+    cur = uuidMeta.get(cur)!.parentUuid;
+  }
+  return chain.reverse();
+}
+
+// Materialize the thread's records (root->leaf order) with one filtering pass.
+export async function buildThread(
+  filePath: string, uuidMeta: Map<string, UuidMeta>, leafUuid: string
+): Promise<RawRecord[]> {
+  const order = threadUuids(uuidMeta, leafUuid);
+  const want = new Set(order);
+  const byUuid = new Map<string, RawRecord>();
+  await forEachLine(filePath, (line) => {
+    if (!line.trim()) return;
+    let rec: RawRecord;
+    try { rec = JSON.parse(line); } catch { return; }
+    if (rec.uuid && want.has(rec.uuid)) byUuid.set(rec.uuid, rec);
+  });
+  return order.map((u) => byUuid.get(u)).filter((r): r is RawRecord => !!r);
 }
 
 // A cheap one-line summary of what a session is about: its first real user

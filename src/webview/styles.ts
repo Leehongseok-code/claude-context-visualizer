@@ -120,6 +120,19 @@ body {
 
 /* left list */
 .list { display: flex; flex-direction: column; gap: 4px; }
+/* group headers (full-context view) */
+.grp-head {
+  display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none;
+  padding: 6px 8px; margin-top: 6px; border-radius: 5px; font-size: 12px; font-weight: 600;
+  background: var(--vscode-editorWidget-background, rgba(128,128,128,0.1));
+  border: 1px solid var(--border);
+}
+.grp-head:hover { border-color: var(--vscode-focusBorder, #007acc); }
+.grp-head.hist { opacity: 0.8; font-weight: 500; }
+.grp-head.compact { border-color: #e11d48; background: rgba(225,29,72,0.12); }
+.grp-caret { color: var(--muted); width: 10px; }
+.grp-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grp-tok { color: var(--muted); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .row {
   padding: 7px 9px; border-radius: 6px; cursor: pointer;
   border: 1px solid transparent; border-left: 3px solid var(--cat);

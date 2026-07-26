@@ -28,6 +28,13 @@ let wasteBySeg: Record<string, string[]> = {};
 let rawMode = false; // markdown toggle: false = rendered, true = raw
 const hidden = new Set<string>(); // category filters (persist across turns)
 
+interface Group { id: string; label: string; isHistory: boolean; tokens: number; }
+interface Usage { realContextTokens: number; cacheRead: number; cacheCreation: number; freshInput: number; output: number; }
+let groups: Group[] = [];
+let usage: Usage | null = null;
+let viewMode: "context" | "turn" = "context"; // full-context (parentUuid thread) vs this-turn-only
+const collapsed = new Set<string>(); // collapsed group ids
+
 window.addEventListener("message", (e) => {
   const msg = e.data;
   if (msg?.type === "sessions") {
@@ -44,8 +51,14 @@ window.addEventListener("message", (e) => {
     sessionId = msg.sessionId ?? null;
     curTurn = msg.turn;
     totalTurns = msg.totalTurns ?? 0;
+    groups = msg.groups || [];
+    usage = msg.usage || null;
+    viewMode = msg.mode === "turn" ? "turn" : (groups.length ? "context" : "turn");
     wasteBySeg = {};
     for (const f of vm.wasteFlags) (wasteBySeg[f.segmentId] ||= []).push(f.kind);
+    // default: collapse prior-turn history groups; keep system, compaction summary, and current turn open
+    collapsed.clear();
+    for (const g of groups) if (g.isHistory && !g.id.startsWith("g-compact")) collapsed.add(g.id);
     mode = "context";
     renderApp();
   }
@@ -55,7 +68,9 @@ vscodeApi.postMessage({ type: "ready" });
 
 // ---- requests ----
 function requestListTurns(id: string) { sessionId = id; vscodeApi.postMessage({ type: "listTurns", sessionId: id }); }
-function requestLoadTurn(id: string | null, turn: number) { vscodeApi.postMessage({ type: "loadTurn", sessionId: id, turn }); }
+function requestLoadTurn(id: string | null, turn: number, m: "context" | "turn" = viewMode) {
+  vscodeApi.postMessage({ type: "loadTurn", sessionId: id, turn, mode: m });
+}
 
 // ---- render ----
 function renderApp() {
@@ -133,13 +148,17 @@ function renderTurns(view: HTMLElement) {
 
 function renderContext(view: HTMLElement) {
   if (!vm) return;
-  // turn stepper
+  const modeBtn =
+    totalTurns > 0
+      ? `<button id="modeToggle" class="tb-btn" title="Full context = the entire parentUuid thread Claude actually received (all history + compaction summaries). This turn = only this turn's own records.">${viewMode === "context" ? "🧵 Full context" : "◻ This turn only"}</button>`
+      : "";
   const stepper =
     totalTurns > 0
       ? `<div class="stepper">` +
         `<button id="tbPrev" class="tb-btn" ${curTurn <= 0 ? "disabled" : ""}>◀ prev</button>` +
         `<span class="tb-count">turn ${curTurn + 1} / ${totalTurns}</span>` +
         `<button id="tbNext" class="tb-btn" ${curTurn >= totalTurns - 1 ? "disabled" : ""}>next ▶</button>` +
+        modeBtn +
         `</div>`
       : `<div class="stepper"><span class="muted">config blueprint (no session)</span></div>`;
 
@@ -155,6 +174,8 @@ function renderContext(view: HTMLElement) {
     const nextB = document.getElementById("tbNext") as HTMLButtonElement | null;
     if (prevB) prevB.onclick = () => requestLoadTurn(sessionId, curTurn - 1);
     if (nextB) nextB.onclick = () => requestLoadTurn(sessionId, curTurn + 1);
+    const mB = document.getElementById("modeToggle");
+    if (mB) mB.onclick = () => { viewMode = viewMode === "context" ? "turn" : "context"; requestLoadTurn(sessionId, curTurn, viewMode); };
   }
 
   renderHeader(vm);
@@ -163,15 +184,20 @@ function renderContext(view: HTMLElement) {
   selectFirstVisible(vm);
 }
 
+function grouped(): boolean { return viewMode === "context" && groups.length > 0; }
+
 function visibleSegments(v: ViewModel) {
   return v.segments.filter((s) => !hidden.has(s.category));
 }
 
 function selectFirstVisible(v: ViewModel) {
-  const vis = visibleSegments(v);
-  const largest = [...vis].sort((a, b) => b.tokenEstimate - a.tokenEstimate)[0];
+  let vis = visibleSegments(v);
+  if (grouped()) vis = vis.filter((s) => !collapsed.has(s.groupId ?? ""));
+  const current = vis.filter((s) => !s.isHistory);
+  const pool = current.length ? current : vis;
+  const largest = [...pool].sort((a, b) => b.tokenEstimate - a.tokenEstimate)[0];
   if (largest) select(largest.id);
-  else document.getElementById("detail")!.innerHTML = `<span class="muted">All types filtered out.</span>`;
+  else document.getElementById("detail")!.innerHTML = `<span class="muted">Nothing to show — expand a group or clear filters.</span>`;
 }
 
 function toggleCategory(cat: string) {
@@ -185,12 +211,21 @@ function toggleCategory(cat: string) {
 
 function renderHeader(v: ViewModel) {
   const el = document.getElementById("summary")!;
-  el.innerHTML =
-    `<div class="hrow">` +
-    `<span class="total">${v.totalTokens.toLocaleString()}</span>` +
-    `<span class="total-label">tokens assembled · ${v.segments.length} segments</span>` +
-    (v.wasteFlags.length ? `<span class="waste-badge" title="optimization flags">⚠ ${v.wasteFlags.length}</span>` : "") +
-    `</div>`;
+  const waste = v.wasteFlags.length ? `<span class="waste-badge" title="optimization flags">⚠ ${v.wasteFlags.length}</span>` : "";
+  if (usage && viewMode === "context") {
+    el.innerHTML =
+      `<div class="hrow">` +
+      `<span class="total">${usage.realContextTokens.toLocaleString()}</span>` +
+      `<span class="total-label">real context tokens (from usage) · ${v.segments.length} segments ` +
+      `<span class="muted">— cache-read ${usage.cacheRead.toLocaleString()} · fresh ${usage.freshInput.toLocaleString()} · out ${usage.output.toLocaleString()}; per-segment sizes below are estimated</span></span>` +
+      waste + `</div>`;
+  } else {
+    el.innerHTML =
+      `<div class="hrow">` +
+      `<span class="total">${v.totalTokens.toLocaleString()}</span>` +
+      `<span class="total-label">≈ estimated tokens · ${v.segments.length} segments${viewMode === "turn" ? " (this turn only)" : ""}</span>` +
+      waste + `</div>`;
+  }
 }
 
 function renderBar(v: ViewModel) {
@@ -223,25 +258,50 @@ function renderBar(v: ViewModel) {
   });
 }
 
+function makeRow(s: any, maxTok: number): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "row" + (s.estimated ? " estimated" : "");
+  row.dataset.id = s.id;
+  row.style.setProperty("--cat", categoryColor(s.category));
+  const flags = wasteBySeg[s.id] || [];
+  const badges = flags.map((k) => `<span class="flag" title="${k}">${flagIcon(k)}</span>`).join("");
+  row.innerHTML =
+    `<div class="row-head"><span class="row-source">${escapeHtml(s.source)}</span>${badges}` +
+    `<span class="row-tok">${s.tokenEstimate.toLocaleString()} · ${pct(s.tokenEstimate)}</span></div>` +
+    `<div class="row-bar"><div class="row-fill" style="width:${(s.tokenEstimate / maxTok) * 100}%"></div></div>`;
+  row.onclick = () => select(s.id);
+  return row;
+}
+
 function renderList(v: ViewModel) {
   const list = document.getElementById("stack")!;
   list.innerHTML = "";
   const vis = visibleSegments(v);
   if (vis.length === 0) { list.innerHTML = `<div class="muted" style="padding:8px">No segments — all types filtered out.</div>`; return; }
   const maxTok = Math.max(1, ...vis.map((s) => s.tokenEstimate));
-  for (const s of vis) {
-    const row = document.createElement("div");
-    row.className = "row" + (s.estimated ? " estimated" : "");
-    row.dataset.id = s.id;
-    row.style.setProperty("--cat", categoryColor(s.category));
-    const flags = wasteBySeg[s.id] || [];
-    const badges = flags.map((k) => `<span class="flag" title="${k}">${flagIcon(k)}</span>`).join("");
-    row.innerHTML =
-      `<div class="row-head"><span class="row-source">${escapeHtml(s.source)}</span>${badges}` +
-      `<span class="row-tok">${s.tokenEstimate.toLocaleString()} · ${pct(s.tokenEstimate)}</span></div>` +
-      `<div class="row-bar"><div class="row-fill" style="width:${(s.tokenEstimate / maxTok) * 100}%"></div></div>`;
-    row.onclick = () => select(s.id);
-    list.appendChild(row);
+  if (grouped()) { renderGroupedList(v, vis, maxTok, list); return; }
+  for (const s of vis) list.appendChild(makeRow(s, maxTok));
+}
+
+// Full-context view: segments grouped by turn (prior turns collapsible as history,
+// the compaction summary highlighted, the current turn expanded).
+function renderGroupedList(v: ViewModel, vis: any[], maxTok: number, list: HTMLElement) {
+  const bySeg: Record<string, any[]> = {};
+  for (const s of vis) (bySeg[s.groupId ?? "_"] ||= []).push(s);
+  for (const g of groups) {
+    const segs = bySeg[g.id] || [];
+    if (segs.length === 0) continue;
+    const isColl = collapsed.has(g.id);
+    const head = document.createElement("div");
+    head.className = "grp-head" + (g.isHistory ? " hist" : "") + (g.id.startsWith("g-compact") ? " compact" : "");
+    const tag = g.id === "g-system" ? "" : g.isHistory ? " · history" : " · current";
+    head.innerHTML =
+      `<span class="grp-caret">${isColl ? "▸" : "▾"}</span>` +
+      `<span class="grp-label">${escapeHtml(g.label)}</span>` +
+      `<span class="grp-tok">${g.tokens.toLocaleString()}${tag}</span>`;
+    head.onclick = () => { if (collapsed.has(g.id)) collapsed.delete(g.id); else collapsed.add(g.id); renderList(v); };
+    list.appendChild(head);
+    if (!isColl) for (const s of segs) list.appendChild(makeRow(s, maxTok));
   }
 }
 
@@ -261,7 +321,7 @@ function looksMarkdown(t: string): boolean {
 }
 function isMarkdownSeg(s: any): boolean {
   if (typeof s.sourcePath === "string" && s.sourcePath.toLowerCase().endsWith(".md")) return true;
-  if (["claudeMd", "memory", "skill", "hook"].includes(s.category)) return true;
+  if (["claudeMd", "memory", "skill", "hook", "compactionSummary"].includes(s.category)) return true;
   return !!s.rawText && looksMarkdown(s.rawText);
 }
 
