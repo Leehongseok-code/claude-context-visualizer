@@ -40,8 +40,18 @@ export function userPreview(rec: RawRecord): string {
   return text.replace(/\s+/g, " ").trim().slice(0, 80);
 }
 
+// True only for a user message carrying actual typed text. In agentic sessions
+// most user-role records are tool_result continuations (they still have a
+// promptId) — those belong to the current turn, not a new one.
+function hasUserText(rec: RawRecord): boolean {
+  const c = rec.message?.content;
+  if (typeof c === "string") return c.trim().length > 0;
+  if (Array.isArray(c)) return c.some((b: any) => b?.type === "text" && String(b.text ?? "").trim().length > 0);
+  return false;
+}
+
 function isTurnStart(rec: RawRecord): boolean {
-  return rec.type === "user" && !!rec.promptId && rec.isMeta !== true;
+  return rec.type === "user" && !!rec.promptId && rec.isMeta !== true && hasUserText(rec);
 }
 
 export async function indexTurns(filePath: string): Promise<TurnIndex[]> {

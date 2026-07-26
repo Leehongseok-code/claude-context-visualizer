@@ -11,6 +11,15 @@ describe("transcriptParser", () => {
     expect(turns[0].promptPreview).toContain("first question");
     expect(turns[1].promptPreview).toContain("두번째");
   });
+  it("does not start a turn on a tool_result-only user record", async () => {
+    // fixture has a promptId'd user record whose content is only a tool_result;
+    // it must fold into turn 0, not create a phantom empty-text turn.
+    const turns = await indexTurns(FIX);
+    expect(turns.length).toBe(2);
+    expect(turns.every(t => t.promptPreview.trim().length > 0)).toBe(true);
+    const recs = await readTurn(FIX, turns[0]);
+    expect(recs.some(r => r.promptId === "p1b")).toBe(true); // folded into turn 0
+  });
   it("turn 1 includes the preceding hook attachment", async () => {
     const turns = await indexTurns(FIX);
     const recs = await readTurn(FIX, turns[0]);
