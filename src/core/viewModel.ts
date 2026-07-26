@@ -3,7 +3,7 @@ import { Segment, SegmentCategory } from "./types";
 const COLORS: Record<SegmentCategory, string> = {
   baseSystemPrompt: "#6b7280", toolDefinitions: "#9ca3af", claudeMd: "#2563eb",
   skill: "#7c3aed", hook: "#dc2626", memory: "#0d9488", mcpInstructions: "#d97706",
-  toolResult: "#65a30d", user: "#0891b2", assistant: "#4f46e5",
+  toolUse: "#ca8a04", toolResult: "#65a30d", user: "#0891b2", assistant: "#4f46e5",
   thinking: "#a855f7", systemReminder: "#db2777",
 };
 

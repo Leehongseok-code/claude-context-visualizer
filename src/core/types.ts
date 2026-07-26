@@ -16,7 +16,7 @@ export interface RawRecord {
 
 export type SegmentCategory =
   | "baseSystemPrompt" | "toolDefinitions" | "claudeMd" | "skill"
-  | "hook" | "memory" | "mcpInstructions" | "toolResult"
+  | "hook" | "memory" | "mcpInstructions" | "toolUse" | "toolResult"
   | "user" | "assistant" | "thinking" | "systemReminder";
 
 export interface Segment {

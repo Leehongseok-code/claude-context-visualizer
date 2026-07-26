@@ -218,9 +218,15 @@ function select(id: string) {
   if (s) renderDetail(s);
 }
 
+function looksMarkdown(t: string): boolean {
+  const head = t.slice(0, 800);
+  return /(^|\n)#{1,6}\s/.test(head) || /(^|\n)[-*]\s+\S/.test(head) || /\*\*[^*\n]+\*\*/.test(head) || /```/.test(t);
+}
 function isMarkdownSeg(s: any): boolean {
   if (typeof s.sourcePath === "string" && s.sourcePath.toLowerCase().endsWith(".md")) return true;
-  return ["claudeMd", "memory", "skill", "hook"].includes(s.category);
+  if (["claudeMd", "memory", "skill", "hook"].includes(s.category)) return true;
+  // skill bodies / md returned by tool calls arrive as toolResult — detect by content
+  return !!s.rawText && looksMarkdown(s.rawText);
 }
 
 function renderDetail(s: any) {
