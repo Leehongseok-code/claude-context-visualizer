@@ -68,7 +68,15 @@ export function activate(context: vscode.ExtensionContext) {
 function renderHtml(webview: vscode.Webview, ctx: vscode.ExtensionContext): string {
   const script = webview.asWebviewUri(vscode.Uri.file(join(ctx.extensionPath, "dist", "webview.js")));
   return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
-<body><div id="summary"></div><div id="stack"></div><div id="drilldown"></div>
+<body>
+<div id="app">
+  <header id="summary"></header>
+  <div id="bar" class="bar"></div>
+  <div class="panes">
+    <div id="stack" class="list"></div>
+    <div id="detail" class="detail"></div>
+  </div>
+</div>
 <script src="${script}"></script></body></html>`;
 }
 
