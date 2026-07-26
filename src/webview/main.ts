@@ -10,7 +10,13 @@ document.head.appendChild(styleEl);
 
 window.addEventListener("message", (e) => {
   const msg = e.data;
-  if (msg?.type === "render") render(msg.vm as ViewModel);
+  if (msg?.type === "init") initTurns(msg.turns || []);
+  else if (msg?.type === "render") {
+    curTurn = msg.turn;
+    totalTurns = msg.totalTurns ?? 0;
+    render(msg.vm as ViewModel);
+    renderTurnbar();
+  }
 });
 
 vscodeApi.postMessage({ type: "ready" });
@@ -18,6 +24,47 @@ vscodeApi.postMessage({ type: "ready" });
 let currentVm: ViewModel | null = null;
 let selectedId: string | null = null;
 let wasteBySeg: Record<string, string[]> = {};
+
+interface TurnMeta { turn: number; promptPreview: string; timestamp?: string; }
+let turnsMeta: TurnMeta[] = [];
+let curTurn = -1;
+let totalTurns = 0;
+
+function initTurns(turns: TurnMeta[]) {
+  turnsMeta = turns;
+  totalTurns = turns.length;
+  renderTurnbar();
+}
+
+function requestTurn(idx: number) {
+  if (idx < 0 || idx >= totalTurns) return;
+  vscodeApi.postMessage({ type: "selectTurn", turn: idx });
+}
+
+function renderTurnbar() {
+  const bar = document.getElementById("turnbar")!;
+  if (totalTurns === 0) {
+    bar.innerHTML = `<span class="tb-note">No Claude Code sessions for this workspace — showing config blueprint only.</span>`;
+    return;
+  }
+  const options = turnsMeta
+    .map((t) => {
+      const label = t.promptPreview ? t.promptPreview : "(no user text)";
+      const sel = t.turn === curTurn ? " selected" : "";
+      return `<option value="${t.turn}"${sel}>#${t.turn + 1} · ${escapeHtml(label).slice(0, 70)}</option>`;
+    })
+    .join("");
+  bar.innerHTML =
+    `<button id="tbPrev" class="tb-btn" ${curTurn <= 0 ? "disabled" : ""}>◀</button>` +
+    `<select id="tbSel" class="tb-sel">${options}</select>` +
+    `<button id="tbNext" class="tb-btn" ${curTurn >= totalTurns - 1 ? "disabled" : ""}>▶</button>` +
+    `<span class="tb-count">turn ${curTurn + 1} / ${totalTurns}</span>`;
+
+  (document.getElementById("tbPrev") as HTMLButtonElement).onclick = () => requestTurn(curTurn - 1);
+  (document.getElementById("tbNext") as HTMLButtonElement).onclick = () => requestTurn(curTurn + 1);
+  (document.getElementById("tbSel") as HTMLSelectElement).onchange = (ev) =>
+    requestTurn(Number((ev.target as HTMLSelectElement).value));
+}
 
 function pct(tokens: number): string {
   if (!currentVm || currentVm.totalTokens === 0) return "0%";

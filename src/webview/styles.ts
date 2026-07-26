@@ -15,6 +15,23 @@ body {
 }
 #app { padding: 14px 16px; }
 
+/* turn bar */
+.turnbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.tb-btn {
+  cursor: pointer; border: 1px solid var(--border); border-radius: 5px; padding: 3px 9px;
+  background: var(--vscode-button-secondaryBackground, rgba(128,128,128,0.15));
+  color: var(--vscode-button-secondaryForeground, inherit);
+}
+.tb-btn:disabled { opacity: .4; cursor: default; }
+.tb-sel {
+  flex: 1; min-width: 180px; max-width: 640px; padding: 4px 8px; border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--vscode-dropdown-background, var(--vscode-input-background));
+  color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground));
+}
+.tb-count { color: var(--muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tb-note { color: var(--muted); font-style: italic; }
+
 /* header */
 .hrow { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
 .total { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
