@@ -15,6 +15,23 @@ actually goes into the model.
 Nothing leaves your machine: it reads local Claude Code transcripts
 (`~/.claude/projects/…`) and your workspace config. No network, no API key.
 
+## Screenshots
+
+Every turn broken into token-weighted segments — click one to see the exact raw
+data it contributed. Tool results are auto-formatted (here, pretty-printed JSON):
+
+![Context view — a tool result auto-formatted as pretty JSON](docs/images/context-json.png)
+
+CLAUDE.md, skill bodies, and hook injections render as Markdown; toggle to raw anytime:
+
+![Context view — CLAUDE.md rendered as Markdown](docs/images/context-markdown.png)
+
+Pick a session by its first prompt, then drill into a turn:
+
+![Session picker showing each session's first prompt](docs/images/sessions.png)
+
+> Screenshots use synthetic sample data.
+
 ## Install
 
 > After installing, run **Developer: Reload Window**, open any project you've used
