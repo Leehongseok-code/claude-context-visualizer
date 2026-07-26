@@ -147,6 +147,7 @@ function renderContext(view: HTMLElement) {
     stepper +
     `<header id="summary"></header>` +
     `<div id="bar" class="bar"></div>` +
+    `<div id="legend" class="legend"></div>` +
     `<div class="panes"><div id="stack" class="list"></div><div id="detail" class="detail"></div></div>`;
 
   if (totalTurns > 0) {
@@ -204,8 +205,7 @@ function renderBar(v: ViewModel) {
     seg.title = `${c.category}: ${c.tokens.toLocaleString()} (${pct(c.tokens)})`;
     bar.appendChild(seg);
   }
-  const legend = document.createElement("div");
-  legend.className = "legend";
+  const legend = document.getElementById("legend")!;
   legend.innerHTML =
     v.byCategory
       .map((c) =>
@@ -214,7 +214,6 @@ function renderBar(v: ViewModel) {
       )
       .join("") +
     (hidden.size ? `<span class="chip reset" data-cat="__all__" title="show all types">↺ show all</span>` : "");
-  bar.appendChild(legend);
   legend.querySelectorAll<HTMLElement>("[data-cat]").forEach((el) => {
     el.onclick = () => {
       const cat = el.dataset.cat!;
