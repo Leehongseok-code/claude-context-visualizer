@@ -139,7 +139,7 @@ body {
   color: var(--vscode-button-secondaryForeground, inherit); font-size: 12px;
 }
 .d-actions button:hover { background: var(--vscode-button-secondaryHoverBackground, rgba(128,128,128,0.28)); }
-.d-raw {
+.d-raw, .hl {
   margin: 0; padding: 12px; border-radius: 6px; max-height: 60vh; overflow: auto;
   white-space: pre-wrap; word-break: break-word;
   font-family: var(--vscode-editor-font-family, monospace);
@@ -147,4 +147,29 @@ body {
   background: var(--vscode-textCodeBlock-background, rgba(128,128,128,0.12));
   border: 1px solid var(--border);
 }
+.hl code.hljs { background: none; padding: 0; font: inherit; }
+.fmt-label {
+  font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px;
+  border: 1px solid var(--border); border-radius: 4px; padding: 1px 7px; align-self: center;
+}
+
+/* highlight.js theme — token colors for light/dark (vscode-* body class) */
+.hljs-comment, .hljs-quote { color: #6a9955; font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-doctag { color: #569cd6; }
+.hljs-string, .hljs-attr, .hljs-meta-string { color: #ce9178; }
+.hljs-number, .hljs-symbol, .hljs-bullet { color: #b5cea8; }
+.hljs-title, .hljs-section, .hljs-name, .hljs-selector-id, .hljs-selector-class { color: #dcdcaa; }
+.hljs-type, .hljs-class .hljs-title, .hljs-built_in, .hljs-builtin-name { color: #4ec9b0; }
+.hljs-attribute, .hljs-variable, .hljs-template-variable { color: #9cdcfe; }
+.hljs-meta { color: #c586c0; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 700; }
+body.vscode-light .hljs-comment, body.vscode-light .hljs-quote { color: #008000; }
+body.vscode-light .hljs-keyword, body.vscode-light .hljs-selector-tag, body.vscode-light .hljs-literal { color: #0000ff; }
+body.vscode-light .hljs-string, body.vscode-light .hljs-attr { color: #a31515; }
+body.vscode-light .hljs-number { color: #098658; }
+body.vscode-light .hljs-title, body.vscode-light .hljs-name { color: #795e26; }
+body.vscode-light .hljs-type, body.vscode-light .hljs-built_in { color: #267f99; }
+body.vscode-light .hljs-attribute, body.vscode-light .hljs-variable { color: #001080; }
+body.vscode-light .hljs-meta { color: #af00db; }
 `;

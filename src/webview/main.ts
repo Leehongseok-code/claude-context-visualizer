@@ -2,6 +2,7 @@ import { ViewModel, categoryColor } from "../core/viewModel";
 import { STYLES } from "./styles";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import hljs from "highlight.js/lib/common";
 
 declare function acquireVsCodeApi(): { postMessage(msg: any): void };
 const vscodeApi = acquireVsCodeApi();
@@ -217,6 +218,7 @@ function select(id: string) {
     (r as HTMLElement).classList.toggle("selected", (r as HTMLElement).dataset.id === id);
   });
   const s = vm?.segments.find((x) => x.id === id);
+  rawMode = false; // each newly selected segment starts in auto view
   if (s) renderDetail(s);
 }
 
@@ -227,23 +229,55 @@ function looksMarkdown(t: string): boolean {
 function isMarkdownSeg(s: any): boolean {
   if (typeof s.sourcePath === "string" && s.sourcePath.toLowerCase().endsWith(".md")) return true;
   if (["claudeMd", "memory", "skill", "hook"].includes(s.category)) return true;
-  // skill bodies / md returned by tool calls arrive as toolResult — detect by content
   return !!s.rawText && looksMarkdown(s.rawText);
+}
+
+type Fmt = "json" | "markdown" | "code" | "text";
+function detectFormat(s: any): Fmt {
+  const t = (s.rawText || "").trim();
+  if (!t) return "text";
+  if (t[0] === "{" || t[0] === "[") {
+    try { JSON.parse(t); return "json"; } catch { /* not json */ }
+  }
+  if (isMarkdownSeg(s)) return "markdown";
+  return "code";
+}
+
+interface Body { html: string; label: string; isMd?: boolean; }
+function buildBody(s: any, fmt: Fmt): Body {
+  const raw: string = s.rawText || "";
+  if (!raw) return { html: `<pre class="d-raw">(no raw text captured — reconstructed/estimated)</pre>`, label: "empty" };
+  try {
+    if (fmt === "json") {
+      const pretty = JSON.stringify(JSON.parse(raw), null, 2);
+      const h = DOMPurify.sanitize(hljs.highlight(pretty, { language: "json" }).value);
+      return { html: `<pre class="hl"><code class="hljs">${h}</code></pre>`, label: "JSON" };
+    }
+    if (fmt === "markdown") {
+      const h = DOMPurify.sanitize(marked.parse(raw, { async: false }) as string);
+      return { html: `<div class="d-md">${h}</div>`, label: "Markdown", isMd: true };
+    }
+    if (fmt === "code") {
+      const res = hljs.highlightAuto(raw);
+      const rel = res.relevance ?? 0;
+      if (rel >= 3) {
+        // auto-detected language is unreliable for short snippets — only name it
+        // when highly confident, otherwise label generically but still highlight.
+        const label = rel >= 6 && res.language ? res.language : "code";
+        const h = DOMPurify.sanitize(res.value);
+        return { html: `<pre class="hl"><code class="hljs">${h}</code></pre>`, label };
+      }
+    }
+  } catch { /* fall through to plain text */ }
+  return { html: `<pre class="d-raw">${escapeHtml(raw)}</pre>`, label: "text" };
 }
 
 function renderDetail(s: any) {
   const d = document.getElementById("detail")!;
   const flags = wasteBySeg[s.id] || [];
-  const canMd = isMarkdownSeg(s) && !!s.rawText;
-  const showRendered = canMd && !rawMode;
-
-  let bodyHtml: string;
-  if (showRendered) {
-    const dirty = marked.parse(s.rawText, { async: false }) as string;
-    bodyHtml = `<div class="d-md">${DOMPurify.sanitize(dirty)}</div>`;
-  } else {
-    bodyHtml = `<pre class="d-raw">${escapeHtml(s.rawText || "(no raw text captured — reconstructed/estimated)")}</pre>`;
-  }
+  const body: Body = rawMode
+    ? { html: `<pre class="d-raw">${escapeHtml(s.rawText || "(no raw text)")}</pre>`, label: "raw" }
+    : buildBody(s, detectFormat(s));
 
   d.innerHTML =
     `<div class="d-head">` +
@@ -256,14 +290,18 @@ function renderDetail(s: any) {
     `</div>` +
     (s.note ? `<div class="d-note">${escapeHtml(s.note)}</div>` : "") +
     `<div class="d-actions">` +
-    (canMd ? `<button id="mdToggle">${rawMode ? "📖 Rendered" : "</> Raw"}</button>` : "") +
+    (s.rawText ? `<button id="fmtToggle">${rawMode ? "✨ Auto view" : "</> Raw"}</button>` : "") +
+    `<span class="fmt-label">${escapeHtml(body.label)}</span>` +
     (s.sourcePath ? `<button id="openBtn">📄 Open source file</button>` : "") +
     (s.rawText ? `<button id="copyBtn">⧉ Copy</button>` : "") +
     `</div>` +
-    bodyHtml;
+    body.html;
 
-  const mdToggle = document.getElementById("mdToggle");
-  if (mdToggle) mdToggle.onclick = () => { rawMode = !rawMode; renderDetail(s); };
+  // highlight fenced code blocks inside rendered markdown
+  if (body.isMd) d.querySelectorAll<HTMLElement>(".d-md pre code").forEach((el) => { try { hljs.highlightElement(el); } catch { /* ignore */ } });
+
+  const fmtToggle = document.getElementById("fmtToggle");
+  if (fmtToggle) fmtToggle.onclick = () => { rawMode = !rawMode; renderDetail(s); };
   const openBtn = document.getElementById("openBtn");
   if (openBtn) openBtn.onclick = () => vscodeApi.postMessage({ type: "openFile", path: s.sourcePath });
   const copyBtn = document.getElementById("copyBtn") as HTMLButtonElement | null;
