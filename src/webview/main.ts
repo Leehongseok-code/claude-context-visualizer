@@ -319,6 +319,29 @@ function select(id: string) {
   if (s) renderDetail(s);
 }
 
+// The Read tool returns file contents in `cat -n` form ("   12\tconst x = 1").
+// Those prefixes are genuinely in the context, but they stop markdown from parsing
+// (headings/tables no longer start the line, and every line looks indented enough
+// to be a code block). Strip them for rendering only; Raw still shows the original.
+const LINE_NUM_RE = /^\s*\d+\t/;
+
+function isLineNumbered(t: string): boolean {
+  const lines = t.split("\n", 40).filter((l) => l.trim().length > 0);
+  if (lines.length < 3) return false;
+  const hits = lines.filter((l) => LINE_NUM_RE.test(l)).length;
+  return hits / lines.length >= 0.8;
+}
+
+function stripLineNumbers(t: string): string {
+  return t.split("\n").map((l) => l.replace(LINE_NUM_RE, "")).join("\n");
+}
+
+/** Text to render (line numbers removed when present). */
+function renderText(s: any): string {
+  const raw: string = s.rawText || "";
+  return isLineNumbered(raw) ? stripLineNumbers(raw) : raw;
+}
+
 function looksMarkdown(t: string): boolean {
   const head = t.slice(0, 800);
   return /(^|\n)#{1,6}\s/.test(head) || /(^|\n)[-*]\s+\S/.test(head) || /\*\*[^*\n]+\*\*/.test(head) || /```/.test(t);
@@ -326,12 +349,12 @@ function looksMarkdown(t: string): boolean {
 function isMarkdownSeg(s: any): boolean {
   if (typeof s.sourcePath === "string" && s.sourcePath.toLowerCase().endsWith(".md")) return true;
   if (["claudeMd", "memory", "skill", "hook", "compactionSummary"].includes(s.category)) return true;
-  return !!s.rawText && looksMarkdown(s.rawText);
+  return !!s.rawText && looksMarkdown(renderText(s));
 }
 
 type Fmt = "json" | "markdown" | "code" | "text";
 function detectFormat(s: any): Fmt {
-  const t = (s.rawText || "").trim();
+  const t = renderText(s).trim();
   if (!t) return "text";
   if (t[0] === "{" || t[0] === "[") {
     try { JSON.parse(t); return "json"; } catch { /* not json */ }
@@ -342,17 +365,20 @@ function detectFormat(s: any): Fmt {
 
 interface Body { html: string; label: string; isMd?: boolean; }
 function buildBody(s: any, fmt: Fmt): Body {
-  const raw: string = s.rawText || "";
-  if (!raw) return { html: `<pre class="d-raw">(no raw text captured — reconstructed/estimated)</pre>`, label: "empty" };
+  const original: string = s.rawText || "";
+  if (!original) return { html: `<pre class="d-raw">(no raw text captured — reconstructed/estimated)</pre>`, label: "empty" };
+  const numbered = isLineNumbered(original);
+  const raw = numbered ? stripLineNumbers(original) : original;
+  const suffix = numbered ? " · line-numbered" : "";
   try {
     if (fmt === "json") {
       const pretty = JSON.stringify(JSON.parse(raw), null, 2);
       const h = DOMPurify.sanitize(hljs.highlight(pretty, { language: "json" }).value);
-      return { html: `<pre class="hl"><code class="hljs">${h}</code></pre>`, label: "JSON" };
+      return { html: `<pre class="hl"><code class="hljs">${h}</code></pre>`, label: "JSON" + suffix };
     }
     if (fmt === "markdown") {
       const h = DOMPurify.sanitize(marked.parse(raw, { async: false }) as string);
-      return { html: `<div class="d-md">${h}</div>`, label: "Markdown", isMd: true };
+      return { html: `<div class="d-md">${h}</div>`, label: "Markdown" + suffix, isMd: true };
     }
     if (fmt === "code") {
       const res = hljs.highlightAuto(raw);
@@ -362,11 +388,11 @@ function buildBody(s: any, fmt: Fmt): Body {
         // when highly confident, otherwise label generically but still highlight.
         const label = rel >= 6 && res.language ? res.language : "code";
         const h = DOMPurify.sanitize(res.value);
-        return { html: `<pre class="hl"><code class="hljs">${h}</code></pre>`, label };
+        return { html: `<pre class="hl"><code class="hljs">${h}</code></pre>`, label: label + suffix };
       }
     }
   } catch { /* fall through to plain text */ }
-  return { html: `<pre class="d-raw">${escapeHtml(raw)}</pre>`, label: "text" };
+  return { html: `<pre class="d-raw">${escapeHtml(raw)}</pre>`, label: "text" + suffix };
 }
 
 function renderDetail(s: any) {
