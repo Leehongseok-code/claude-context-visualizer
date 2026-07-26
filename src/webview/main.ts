@@ -36,7 +36,7 @@ function render(vm: ViewModel) {
 function showDrill(s: any) {
   const d = document.getElementById("drilldown")!;
   d.innerHTML =
-    `<h3>${s.source} — ${s.tokenEstimate} tokens${s.estimated ? " (estimated)" : ""}</h3>` +
+    `<h3>${escapeHtml(s.source)} — ${s.tokenEstimate} tokens${s.estimated ? " (estimated)" : ""}</h3>` +
     (s.note ? `<p class="note">${escapeHtml(s.note)}</p>` : "") +
     (s.sourcePath ? `<button id="openBtn">Open ${escapeHtml(s.sourcePath)}</button>` : "") +
     `<pre>${escapeHtml(s.rawText || "(no captured text)")}</pre>`;
