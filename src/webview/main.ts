@@ -45,6 +45,10 @@ let groups: Group[] = [];
 let usage: Usage | null = null;
 let model: string | null = null;
 let contextWindow: number | null = null; // the answering model's ceiling — the bar's full width
+// "window" answers "how full is the context?"; "composition" answers "what is it made of?".
+// The first is the honest default — a normalized bar looks identical at 4% and 60% — but
+// it squeezes the small categories, so the other reading stays one click away.
+let barScale: "window" | "composition" = "window";
 let viewMode: "context" | "turn" = "context"; // full-context (parentUuid thread) vs this-turn-only
 const collapsed = new Set<string>(); // collapsed group ids
 
@@ -371,6 +375,17 @@ function windowChip(used: number): string {
     `<b>${share}%</b> of ${label} window</span>`;
 }
 
+// Offered only when there is a window to scale against — otherwise both modes draw the
+// same bar and the control would be a switch that does nothing.
+function scaleChip(): string {
+  if (!contextWindow) return "";
+  const win = barScale === "window";
+  return `<span class="chip scale" data-scale="1" title="${win
+    ? "Bar spans the model's full context window. Click to rescale it to this turn's own composition."
+    : "Bar spans this turn only, so the categories fill it. Click to rescale it to the model's context window."}">` +
+    `${win ? "▭ window scale" : "▬ composition scale"}</span>`;
+}
+
 function renderBar(v: ViewModel) {
   const bar = document.getElementById("bar")!;
   bar.innerHTML = "";
@@ -386,7 +401,7 @@ function renderBar(v: ViewModel) {
     bar.appendChild(seg);
   }
   const used = v.measuredTokens ?? v.totalTokens;
-  if (contextWindow && used < total) {
+  if (windowScaled() && used < total) {
     const free = document.createElement("div");
     free.className = "bar-seg free";
     free.style.width = `${((total - used) / total) * 100}%`;
@@ -402,7 +417,15 @@ function renderBar(v: ViewModel) {
       )
       .join("") +
     (hidden.size ? `<span class="chip reset" data-cat="__all__" title="show all types">↺ show all</span>` : "") +
-    (hidden.size < v.byCategory.length ? `<span class="chip reset" data-cat="__none__" title="hide all types, then pick the ones you want">⊘ hide all</span>` : "");
+    (hidden.size < v.byCategory.length ? `<span class="chip reset" data-cat="__none__" title="hide all types, then pick the ones you want">⊘ hide all</span>` : "") +
+    scaleChip();
+  const scaleEl = legend.querySelector<HTMLElement>("[data-scale]");
+  if (scaleEl) {
+    scaleEl.onclick = () => {
+      barScale = barScale === "window" ? "composition" : "window";
+      if (vm) { renderHeader(vm); renderBar(vm); renderList(vm); }
+    };
+  }
   legend.querySelectorAll<HTMLElement>("[data-cat]").forEach((el) => {
     el.onclick = () => {
       const cat = el.dataset.cat!;
@@ -686,13 +709,20 @@ function renderDetail(s: any) {
 // ---- utils ----
 // Share of the measured context when one was recorded, so a segment's percentage means
 // "of what the model actually received" rather than "of our own sum of estimates".
-// The denominator the bar and every percentage share: the model's context window when we
-// know it, otherwise whatever this turn actually came to. max() keeps an overshooting
-// estimate inside the track instead of letting overflow:hidden clip it away silently.
+// The denominator the bar and every percentage share. In window scale it is the model's
+// ceiling; in composition scale it is this turn's own size, so the categories fill the
+// track. max() keeps an overshooting estimate inside the track instead of letting
+// overflow:hidden clip it away silently.
 function barTotal(): number {
   const used = vm ? (vm.measuredTokens ?? vm.totalTokens) : 0;
   const span = Math.max(used, vm?.recordedTokens ?? 0);
-  return Math.max(1, contextWindow ? Math.max(contextWindow, span) : span);
+  const ceiling = windowScaled() ? Math.max(contextWindow!, span) : span;
+  return Math.max(1, ceiling);
+}
+// Window scale needs a window; without one there is nothing to scale against and the two
+// modes would render identically, so the toggle is hidden and this stays false.
+function windowScaled(): boolean {
+  return barScale === "window" && !!contextWindow;
 }
 function pct(tokens: number): string {
   return ((tokens / barTotal()) * 100).toFixed(1) + "%";

@@ -117,7 +117,8 @@ body {
 }
 
 /* proportional composition bar */
-.bar { display: flex; width: 100%; height: 14px; border-radius: 7px; overflow: hidden; border: 1px solid var(--border); }
+/* faint track so the unfilled part of the context window reads as empty, not as missing */
+.bar { display: flex; width: 100%; height: 14px; border-radius: 7px; overflow: hidden; border: 1px solid var(--border); background: rgba(128,128,128,0.10); }
 /* headroom left in the model's context window — the bar spans the whole window */
 .bar-seg.free { background: transparent; }
 .bar-seg { height: 100%; transition: filter .15s, opacity .15s; }
@@ -131,6 +132,8 @@ body {
 .chip.filter.off { opacity: 0.45; text-decoration: line-through; }
 .chip.filter.off i { filter: grayscale(1); }
 .chip.reset { cursor: pointer; user-select: none; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--vscode-textLink-foreground, #3794ff); }
+.chip.scale { cursor: pointer; user-select: none; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--vscode-focusBorder, #007acc); color: var(--vscode-editor-foreground); font-variant-numeric: tabular-nums; }
+.chip.scale:hover { background: var(--card); }
 
 /* two panes — responsive to the webview/panel width */
 .panes { display: grid; grid-template-columns: minmax(0, 38%) minmax(0, 1fr); gap: 14px; margin-top: 12px; align-items: start; }
