@@ -94,6 +94,41 @@ function buildToolNameMap(records: RawRecord[]): Map<string, string> {
   return m;
 }
 
+const AUTO_INSERTED_NOTE =
+  "Claude Code inserted this into the user turn; the human did not type it.";
+
+// A `user`-role record is not the same thing as something a human typed. Claude Code
+// writes skill bodies, slash-command expansions, task notifications, and reminders into
+// the user turn — and flags them `isMeta`. Sorting the text by what it actually is keeps
+// `user` meaning "a person typed this", which is the one thing nothing else can be.
+//
+// The `isMeta` check is deliberately last: it is a flag the transcript already sets to
+// say "not a real user message", so anything the named rules miss — including wrappers
+// that do not exist yet — still stays out of `user` instead of inflating it.
+function classifyUserText(text: string, rec: RawRecord): { category: SegmentCategory; source: string } {
+  if (text.includes("<claudeMd>")) return { category: "claudeMd", source: "CLAUDE.md" };
+  if (text.includes("<user-memory-input>")) return { category: "memory", source: "user-memory" };
+  const skill = /^Base directory for this skill:\s*(\S+)/.exec(text);
+  if (skill) {
+    const name = skill[1].split("/").filter(Boolean).pop() ?? "skill";
+    return { category: "skill", source: `skill:${name}` };
+  }
+  if (text.includes("<system-reminder>")) return { category: "systemReminder", source: "system-reminder" };
+  if (/<command-(name|message|args)>|<local-command-(stdout|stderr|caveat)>/.test(text)) {
+    return { category: "autoInserted", source: "auto-inserted:command" };
+  }
+  if (text.includes("<task-notification>")) return { category: "autoInserted", source: "auto-inserted:notification" };
+  if (rec.isMeta === true) return { category: "autoInserted", source: "auto-inserted:meta" };
+  return { category: "user", source: "user" };
+}
+
+function userTextSegment(text: string, rec: RawRecord, mk: Mk): Segment {
+  const { category, source } = classifyUserText(text, rec);
+  const seg = mk(category, source, text);
+  if (category === "autoInserted") seg.note = AUTO_INSERTED_NOTE;
+  return applyAttribution(seg, rec);
+}
+
 // One transcript record -> zero or more segments (hook / user / assistant blocks).
 function classifyRecord(rec: RawRecord, mk: Mk, toolNameById: Map<string, string>): Segment[] {
   const out: Segment[] = [];
@@ -105,11 +140,7 @@ function classifyRecord(rec: RawRecord, mk: Mk, toolNameById: Map<string, string
   const content = rec.message?.content;
   if (rec.type === "user") {
     if (typeof content === "string") {
-      let category: SegmentCategory = "user";
-      let source = "user";
-      if (content.includes("<claudeMd>")) { category = "claudeMd"; source = "CLAUDE.md"; }
-      else if (content.includes("<system-reminder>")) { category = "systemReminder"; source = "system-reminder"; }
-      out.push(applyAttribution(mk(category, source, content), rec));
+      out.push(userTextSegment(content, rec, mk));
     } else if (Array.isArray(content)) {
       for (const b of content) {
         if (b?.type === "tool_result") {
@@ -127,7 +158,9 @@ function classifyRecord(rec: RawRecord, mk: Mk, toolNameById: Map<string, string
           }
           out.push(seg);
         } else if (b?.type === "text") {
-          out.push(applyAttribution(mk("user", "user", b.text ?? ""), rec));
+          // Same sorting as the string branch above. It used to be missing here, so an
+          // array-shaped record put a whole skill body under `user`.
+          out.push(userTextSegment(b.text ?? "", rec, mk));
         }
       }
     }

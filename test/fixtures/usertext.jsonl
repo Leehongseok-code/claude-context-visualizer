@@ -1,0 +1,9 @@
+{"type":"user","uuid":"U1","parentUuid":null,"promptId":"p1","message":{"role":"user","content":"fix the login bug please"}}
+{"type":"user","uuid":"U2","parentUuid":"U1","promptId":"p2","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: /tmp/bundled-skills/2.1.220/abc123/claude-api\n\n# Building LLM-Powered Applications\n\nlots of skill body here"}]}}
+{"type":"user","uuid":"U3","parentUuid":"U2","promptId":"p3","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"<system-reminder>\nThe task list is empty.\n</system-reminder>"}]}}
+{"type":"user","uuid":"U4","parentUuid":"U3","promptId":"p4","isMeta":true,"message":{"role":"user","content":"<command-name>/model</command-name>\n<command-message>model</command-message>"}}
+{"type":"user","uuid":"U5","parentUuid":"U4","promptId":"p5","isMeta":true,"message":{"role":"user","content":"<local-command-stdout>Set model to Fable 5</local-command-stdout>"}}
+{"type":"user","uuid":"U6","parentUuid":"U5","promptId":"p6","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"<task-notification>\n<task-id>bje2on2v8</task-id>\n</task-notification>"}]}}
+{"type":"user","uuid":"U7","parentUuid":"U6","promptId":"p7","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"some future wrapper nobody has taught the parser about yet"}]}}
+{"type":"user","uuid":"U8","parentUuid":"U7","promptId":"p8","message":{"role":"user","content":[{"type":"text","text":"and now make it faster"}]}}
+{"type":"assistant","uuid":"A1","parentUuid":"U8","requestId":"req_1","message":{"role":"assistant","content":[{"type":"text","text":"done"}],"usage":{"input_tokens":5,"cache_read_input_tokens":900,"output_tokens":3}}}

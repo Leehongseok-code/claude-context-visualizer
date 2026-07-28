@@ -36,7 +36,7 @@ export interface CompactMetadata {
 export type SegmentCategory =
   | "unrecorded" | "claudeMd" | "skill"
   | "hook" | "memory" | "mcpInstructions" | "toolUse" | "toolResult"
-  | "user" | "assistant" | "thinking" | "systemReminder" | "compactionSummary";
+  | "user" | "autoInserted" | "assistant" | "thinking" | "systemReminder" | "compactionSummary";
 
 export interface Segment {
   id: string;
