@@ -89,7 +89,7 @@ export interface TurnIndex {
   byteEnd: number;
   promptPreview: string;
   timestamp?: string;
-  uuid?: string;       // the turn-start record's uuid — the leaf we reconstruct context from
+  uuid?: string;       // last record descending from this turn's prompt — the leaf we reconstruct context from
 }
 
 // Lightweight per-record metadata built in one streaming pass, used to walk the

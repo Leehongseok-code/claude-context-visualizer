@@ -57,6 +57,13 @@ function isTurnStart(rec: RawRecord): boolean {
 export async function indexTurns(filePath: string): Promise<TurnIndex[]> {
   const turns: TurnIndex[] = [];
   let cur: TurnIndex | null = null;
+  // The uuids known to descend from the current turn's prompt. A turn's byte range also
+  // catches records that belong to no thread or to the previous one: `compact_boundary`
+  // is written with parentUuid null (a fresh root), `away_summary` and a re-sent prompt's
+  // sibling hang off the previous turn's tail. Taking the last-written record as the leaf
+  // would walk past this turn's prompt and reconstruct the previous turn instead — or,
+  // for a null-parent leaf, collapse the thread to that one record.
+  let descendants = new Set<string>();
   await forEachLine(filePath, (line, byteStart, byteEnd) => {
     if (!line.trim()) return;
     let rec: RawRecord;
@@ -71,10 +78,15 @@ export async function indexTurns(filePath: string): Promise<TurnIndex[]> {
         timestamp: rec.timestamp,
         uuid: rec.uuid,
       };
+      descendants = rec.uuid ? new Set([rec.uuid]) : new Set();
     }
     if (cur) {
       cur.byteEnd = byteEnd;
-      if (rec.uuid) cur.uuid = rec.uuid; // track the turn's last record = the leaf to reconstruct from
+      // the leaf is the last record actually reachable from this turn's prompt
+      if (rec.uuid && rec.parentUuid && descendants.has(rec.parentUuid)) {
+        descendants.add(rec.uuid);
+        cur.uuid = rec.uuid;
+      }
     }
   });
   if (cur) turns.push(cur);
