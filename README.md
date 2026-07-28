@@ -35,6 +35,84 @@ Pick a session by its first prompt, then drill into a turn:
 
 > Screenshots use synthetic sample data.
 
+## The controls
+
+Every toggle answers a different question. None of them changes the data — only
+which reading of it you get.
+
+### 🧵 Full context ⇄ ◻ This turn only
+
+**What Claude received on this turn, versus what this turn itself added.**
+
+*Full context* rebuilds the entire message thread the model was handed: every prior
+turn carried as history, compaction summaries, and the messages compaction replayed
+verbatim. It is the whole prompt, which is what you want when asking "why is this
+turn so expensive?"
+
+*This turn only* drops the history and shows the turn's own records. Faster, and
+the right view when you want to see what one exchange contributed on its own.
+Measured `usage` is only shown in full-context mode — a total covering the whole
+thread would not describe a single turn's records.
+
+### ▭ window scale ⇄ ▬ composition scale
+
+**How full the context window is, versus what the context is made of.**
+
+*Window scale* (the default) draws the bar across the answering model's full
+context window, so a turn filling 4% of it looks nothing like one filling 60%. The
+empty track on the right is headroom.
+
+*Composition scale* normalizes the bar to this turn's own size, so the categories
+fill the width. Small categories become readable again — the trade is that every
+turn's bar then looks equally full.
+
+The toggle only appears when the model's window is known. For an unrecognized model
+the panel scales by what it measured rather than inventing a ceiling.
+
+### Type filter chips · ↺ show all · ⊘ hide all
+
+**Click any category chip to hide it** from the bar, the list, and the totals — the
+fastest way to answer "what would this turn cost without the hooks?" `⊘ hide all`
+clears everything so you can add back only the one or two categories you care
+about. Filters persist as you move between turns.
+
+### ⟳ Refresh
+
+Re-reads the transcript and your workspace config from disk. Everything is cached
+for the panel's lifetime, so a session Claude Code is still writing to would
+otherwise stay frozen at whatever it looked like when you opened the panel. Parked
+on the newest turn, you stay pinned to the newest turn as the transcript grows.
+
+### ✨ Auto view ⇄ `</>` Raw
+
+*Auto view* formats a segment by what it is: JSON pretty-printed and highlighted,
+code syntax-highlighted, Markdown rendered. *Raw* shows the exact bytes the segment
+contributed — use it when the formatting is hiding whitespace, escaping, or an
+envelope you need to see.
+
+### ▸ Agent call rows
+
+An `Agent` call expands into that subagent's own transcript, read from its separate
+file on demand. Its segments are indented and **excluded from this turn's totals**:
+the subagent ran in its own context window, so folding its tokens into this one
+would be double-counting.
+
+## How segments are categorized
+
+Two categories are easy to misread, so they are worth stating plainly:
+
+- **`user` means a human typed it.** Claude Code also writes skill bodies,
+  slash-command expansions, task notifications, and reminders into the user turn.
+  Those are sorted out by what they are (`skill`, `systemReminder`, …) and anything
+  left that the transcript flags as not-a-real-user-message lands in
+  **`auto-inserted`**, never in `user`.
+- **`not-in-transcript`** is the measured context minus everything the transcript
+  records — the base system prompt and the tool JSON schemas, which are sent on
+  every request and written to none of them, plus whatever the per-segment
+  estimator got wrong. It is hatched because there is no text to show: those bytes
+  exist only in the HTTP request. When a turn records no `usage`, it falls back to a
+  size measured from a reference capture and says so.
+
 ## Install
 
 > After installing, run **Developer: Reload Window**, open any project you've used
@@ -123,6 +201,51 @@ CLAUDE.md, 스킬 본문, 훅 주입 내용은 마크다운으로 렌더링되�
 ![각 세션의 첫 프롬프트를 보여주는 세션 선택 화면](docs/images/sessions.png)
 
 > 스크린샷은 예시용 합성 데이터입니다.
+
+## 화면의 토글들
+
+토글마다 답하는 질문이 다릅니다. 데이터를 바꾸는 건 하나도 없고, **어떤 방식으로 읽을지**만 바뀝니다.
+
+### 🧵 Full context ⇄ ◻ This turn only
+
+**이번 턴에 Claude가 받은 전부 vs 이번 턴이 새로 더한 것.**
+
+*Full context*는 모델에게 실제로 전달된 메시지 스레드 전체를 재구성합니다 — 히스토리로 딸려간 이전 턴들, 압축 요약, 그리고 압축이 그대로 다시 보낸 보존 메시지까지. **"이 턴은 왜 이렇게 비싼가"**를 볼 때 필요한 화면입니다.
+
+*This turn only*는 히스토리를 빼고 이 턴의 레코드만 봅니다. 더 빠르고, **한 번의 주고받음이 얼마를 더했는지** 볼 때 적합합니다. 실측 `usage`는 Full context에서만 표시됩니다 — 스레드 전체를 잰 총량으로 한 턴의 레코드를 설명할 수는 없으니까요.
+
+### ▭ window scale ⇄ ▬ composition scale
+
+**컨텍스트 윈도우가 얼마나 찼나 vs 그 안이 무엇으로 채워졌나.**
+
+*Window scale*(기본값)은 막대를 **응답한 모델의 컨텍스트 윈도우 전체**에 걸쳐 그립니다. 4%를 쓴 턴과 60%를 쓴 턴이 확연히 다르게 보이고, 오른쪽 빈 트랙이 남은 여유입니다.
+
+*Composition scale*은 막대를 이 턴 크기로 정규화해서 카테고리가 폭을 꽉 채웁니다. 작은 카테고리가 다시 읽히는 대신, 모든 턴의 막대가 똑같이 꽉 차 보입니다.
+
+이 토글은 **모델의 윈도우를 아는 경우에만** 나타납니다. 모르는 모델이면 천장을 지어내지 않고 측정값 기준으로 그립니다.
+
+### 타입 필터 칩 · ↺ show all · ⊘ hide all
+
+**카테고리 칩을 클릭하면 막대·목록·합계에서 빠집니다.** *"훅이 없었으면 이 턴은 얼마였을까"*를 가장 빨리 확인하는 방법입니다. `⊘ hide all`로 전부 끈 뒤 보고 싶은 한두 개만 켜는 방식도 됩니다. 필터는 턴을 넘겨도 유지됩니다.
+
+### ⟳ Refresh
+
+트랜스크립트와 워크스페이스 설정을 디스크에서 다시 읽습니다. 패널이 열려 있는 동안 모든 걸 캐시하기 때문에, **Claude Code가 지금도 쓰고 있는 세션**은 이걸 누르지 않으면 패널을 열었던 시점에 멈춰 있습니다. 최신 턴에 있었다면 트랜스크립트가 늘어나도 계속 최신 턴에 붙어 있습니다.
+
+### ✨ Auto view ⇄ `</>` Raw
+
+*Auto view*는 세그먼트를 정체에 맞게 포매팅합니다 — JSON은 정렬·하이라이트, 코드는 문법 강조, 마크다운은 렌더링. *Raw*는 그 세그먼트가 기여한 **바이트 그대로**를 보여줍니다. 포매팅이 공백·이스케이프·감싸는 태그를 가리고 있을 때 쓰세요.
+
+### ▸ Agent 호출 행
+
+`Agent` 호출을 펼치면 그 서브에이전트의 트랜스크립트가 별도 파일에서 그 자리에 읽혀 들어옵니다. 들여쓰기되어 표시되며 **이 턴의 합계에는 포함되지 않습니다** — 서브에이전트는 자기만의 컨텍스트 윈도우에서 돌았으므로, 토큰을 여기 더하면 이중 계산이 됩니다.
+
+## 세그먼트 분류에 대해
+
+오해하기 쉬운 두 가지만 짚어둡니다:
+
+- **`user`는 사람이 직접 친 것만입니다.** Claude Code는 스킬 본문, 슬래시 커맨드 확장, 태스크 알림, 리마인더도 user 턴에 써 넣습니다. 그런 것들은 정체에 따라(`skill`, `systemReminder` …) 분류되고, 남은 것 중 트랜스크립트가 "진짜 사용자 메시지가 아니다"라고 표시한 건 전부 **`auto-inserted`**로 갑니다. `user`로는 절대 안 들어갑니다.
+- **`not-in-transcript`**는 실측 컨텍스트에서 트랜스크립트가 기록한 전부를 뺀 나머지입니다 — 매 요청 전송되지만 로그에는 한 번도 안 남는 **base 시스템 프롬프트와 도구 JSON 스키마**, 그리고 세그먼트 추정기의 오차입니다. 빗금으로 표시되는 이유는 **보여줄 텍스트가 없기 때문**입니다. 그 바이트는 HTTP 요청 안에만 존재합니다. 턴에 `usage`가 없으면 기준 캡처에서 잰 크기로 대체하고, 그 사실을 노트에 적습니다.
 
 ## 설치
 
