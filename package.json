@@ -2,7 +2,7 @@
   "name": "claude-context-visualizer",
   "displayName": "Claude Context Visualizer",
   "description": "Visualize how Claude Code assembles its per-turn LLM context.",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "publisher": "local",
   "license": "MIT",
   "repository": {
