@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { join } from "path";
-import { findSubagentFiles, extractAgentId, indexAgentLaunches } from "../src/core/subagentLocator";
+import { findSubagentFiles, extractAgentId, indexAgentLaunches, offThreadLaunches } from "../src/core/subagentLocator";
 import { readAllRecords, indexByUuid, buildThread } from "../src/core/transcriptParser";
 import { assembleTurn, assembleContext, assembleSubagent } from "../src/core/contextAssembler";
 import { HeuristicTokenEstimator } from "../src/core/tokenEstimator";
@@ -86,14 +86,22 @@ describe("agent launches across branches", () => {
 
   it("indexes every launch in the file, on-thread or not", async () => {
     const launches = await indexAgentLaunches(AGENTS);
-    expect(launches.get("tu-A")).toBe("aaaa1111bbbb2222"); // result sits off-thread
-    expect(launches.get("tu-B")).toBe("cccc3333dddd4444");
-    expect(launches.size).toBe(2);
+    const byTool = new Map(launches.map((l) => [l.toolUseId, l]));
+    expect(byTool.get("tu-A")?.agentId).toBe("aaaa1111bbbb2222"); // result sits off-thread
+    expect(byTool.get("tu-B")?.agentId).toBe("cccc3333dddd4444");
+    expect(launches.length).toBe(2);
+  });
+
+  it("carries the call's description and prompt for listing agents apart from the thread", async () => {
+    const launches = await indexAgentLaunches(AGENTS);
+    const a = launches.find((l) => l.toolUseId === "tu-A");
+    expect(a?.description).toBe("first");
+    expect(a?.prompt).toBe("do A");
   });
 
   it("ignores an agentId marker with no Agent call behind it", async () => {
     const launches = await indexAgentLaunches(AGENTS);
-    expect(launches.has("tu-Z")).toBe(false);
+    expect(launches.some((l) => l.toolUseId === "tu-Z")).toBe(false);
   });
 
   it("tags every Agent call in the thread once the index is supplied", async () => {
@@ -108,6 +116,31 @@ describe("agent launches across branches", () => {
     // without it, only the agent whose result stayed on the thread is reachable
     const noIndex = assembleContext(thread, bp, est).segments;
     expect(noIndex.filter((s) => s.category === "toolUse" && s.agentId).length).toBe(1);
+  });
+});
+
+describe("offThreadLaunches", () => {
+  const L = [
+    { toolUseId: "t1", agentId: "shown", description: "in the thread" },
+    { toolUseId: "t2", agentId: "hidden", description: "abandoned branch" },
+    { toolUseId: "t3", agentId: "gone", description: "no transcript" },
+  ];
+  const onDisk = new Set(["shown", "hidden"]);
+
+  it("lists only agents the context does not reach", () => {
+    const out = offThreadLaunches(L, new Set(["shown"]), onDisk);
+    expect(out.map((l) => l.agentId)).toEqual(["hidden"]);
+  });
+
+  it("drops agents with no transcript on disk — nothing to open", () => {
+    const out = offThreadLaunches(L, new Set(), onDisk);
+    expect(out.map((l) => l.agentId)).toEqual(["shown", "hidden"]);
+  });
+
+  it("lists a re-launched agent once", () => {
+    const dupes = [...L, { toolUseId: "t4", agentId: "hidden", description: "same agent again" }];
+    const out = offThreadLaunches(dupes, new Set(), onDisk);
+    expect(out.filter((l) => l.agentId === "hidden").length).toBe(1);
   });
 });
 

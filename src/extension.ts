@@ -5,7 +5,7 @@ import { existsSync, statSync } from "fs";
 import { findSessionsForWorkspace } from "./core/sessionLocator";
 import { indexTurns, readTurn, firstPromptPreview, indexByUuid, buildThread, readAllRecords } from "./core/transcriptParser";
 import { scanBlueprint } from "./core/configScanner";
-import { findSubagentFiles, indexAgentLaunches } from "./core/subagentLocator";
+import { findSubagentFiles, indexAgentLaunches, offThreadLaunches, AgentLaunch } from "./core/subagentLocator";
 import { assembleTurn, assembleContext, assembleSubagent } from "./core/contextAssembler";
 import { buildViewModel } from "./core/viewModel";
 import { HeuristicTokenEstimator } from "./core/tokenEstimator";
@@ -30,7 +30,7 @@ export function activate(context: vscode.ExtensionContext) {
       const turnsCache = new Map<string, TurnIndex[]>();
       const uuidCache = new Map<string, Map<string, UuidMeta>>();
       const subagentCache = new Map<string, Map<string, string>>();
-      const launchCache = new Map<string, Map<string, string>>();
+      const launchCache = new Map<string, AgentLaunch[]>();
 
       async function rescan(): Promise<void> {
         blueprint = await scanBlueprint(ws);
@@ -60,12 +60,12 @@ export function activate(context: vscode.ExtensionContext) {
 
       // tool_use_id -> agentId for the whole session: async agents launched together
       // fan out across branches, so this cannot be read off the assembled thread.
-      async function getLaunches(sessionId: string): Promise<Map<string, string>> {
+      async function getLaunches(sessionId: string): Promise<AgentLaunch[]> {
         if (launchCache.has(sessionId)) return launchCache.get(sessionId)!;
         const s = byId.get(sessionId);
-        const map = s ? await indexAgentLaunches(s.filePath) : new Map<string, string>();
-        launchCache.set(sessionId, map);
-        return map;
+        const list = s ? await indexAgentLaunches(s.filePath) : [];
+        launchCache.set(sessionId, list);
+        return list;
       }
 
       async function getSubagentFiles(sessionId: string): Promise<Map<string, string>> {
@@ -103,6 +103,13 @@ export function activate(context: vscode.ExtensionContext) {
         });
       }
 
+      async function offThreadAgents(sessionId: string, segments: Segment[]) {
+        const inView = new Set(segments.map((s) => s.agentId).filter((x): x is string => !!x));
+        const onDisk = new Set((await getSubagentFiles(sessionId)).keys());
+        return offThreadLaunches(await getLaunches(sessionId), inView, onDisk)
+          .map((l) => ({ agentId: l.agentId, description: l.description, prompt: l.prompt }));
+      }
+
       async function sendTurn(
         sessionId: string | null, turnIdx: number, mode: "turn" | "context", refreshed = false
       ): Promise<void> {
@@ -132,6 +139,7 @@ export function activate(context: vscode.ExtensionContext) {
         const vm = buildViewModel(segments, prev);
         panel.webview.postMessage({
           type: "render", vm, groups, usage, mode, sessionId, turn: turnIdx, totalTurns, refreshed,
+          offThreadAgents: sessionId ? await offThreadAgents(sessionId, segments) : [],
         });
       }
 

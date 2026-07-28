@@ -38,6 +38,9 @@ const collapsed = new Set<string>(); // collapsed group ids
 // Subagents run in their own context window, written to a separate transcript file. They
 // hang off the Agent tool_result that launched them and are pulled in only when expanded,
 // so their tokens never touch this turn's totals.
+interface OffThreadAgent { agentId: string; description?: string; prompt?: string; }
+let offThread: OffThreadAgent[] = [];        // launched here, but off the thread being shown
+const offRows: Record<string, any> = {};     // synthetic rows for those, so they stay selectable
 const subSegs: Record<string, any[]> = {};   // agentId -> that agent's segments
 const subDepth: Record<string, number> = {}; // agentId -> nesting level (1 = direct child)
 const subExpanded = new Set<string>();
@@ -74,6 +77,7 @@ window.addEventListener("message", (e) => {
     totalTurns = msg.totalTurns ?? 0;
     groups = msg.groups || [];
     usage = msg.usage || null;
+    offThread = msg.offThreadAgents || [];
     viewMode = msg.mode === "turn" ? "turn" : (groups.length ? "context" : "turn");
     wasteBySeg = {};
     for (const f of vm.wasteFlags) (wasteBySeg[f.segmentId] ||= []).push(f.kind);
@@ -430,8 +434,36 @@ function renderList(v: ViewModel) {
   const vis = visibleSegments(v);
   if (vis.length === 0) { list.innerHTML = `<div class="muted" style="padding:8px">No segments — all types filtered out.</div>`; return; }
   const maxTok = Math.max(1, ...vis.map((s) => s.tokenEstimate));
-  if (grouped()) { renderGroupedList(v, vis, maxTok, list); return; }
+  if (grouped()) { renderGroupedList(v, vis, maxTok, list); renderOffThread(list); return; }
   for (const s of vis) appendRow(list, s, maxTok);
+  renderOffThread(list);
+}
+
+// Agents that ran in this session but whose Agent call is not on the thread being
+// shown — kept below the context proper, never folded into it.
+function renderOffThread(list: HTMLElement): void {
+  if (offThread.length === 0) return;
+  const head = document.createElement("div");
+  head.className = "off-head";
+  head.textContent =
+    `⚑ ${offThread.length} subagent${offThread.length > 1 ? "s" : ""} launched off this thread — ` +
+    `ran in this session, but the call is not in this context (an abandoned branch, e.g. an edited prompt)`;
+  list.appendChild(head);
+  for (const a of offThread) {
+    const row = offRows[a.agentId] ||= {
+      id: `off-${a.agentId}`,
+      category: "toolUse",
+      source: `tool:Agent · ${a.description || a.agentId.slice(0, 8)}`,
+      rawText: a.prompt || "",
+      tokenEstimate: 0,
+      estimated: false,
+      agentId: a.agentId,
+      depth: 0,
+      separateContext: true,
+      note: "Launched in this session but off the thread shown here, so it was never part of this context. Expand to read what it did.",
+    };
+    appendRow(list, row, 1);
+  }
 }
 
 // Full-context view: segments grouped by turn (prior turns collapsible as history,
@@ -460,6 +492,7 @@ function renderGroupedList(v: ViewModel, vis: any[], maxTok: number, list: HTMLE
 function findSeg(id: string): any {
   const s = vm?.segments.find((x) => x.id === id);
   if (s) return s;
+  if (id.startsWith("off-") && offRows[id.slice(4)]) return offRows[id.slice(4)];
   for (const kids of Object.values(subSegs)) {
     const k = kids.find((x) => x.id === id);
     if (k) return k;

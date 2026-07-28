@@ -165,6 +165,11 @@ body {
 .sub-note { margin: 4px 0; padding: 4px 8px; color: var(--muted); font-size: 11px; font-style: italic; }
 .sub-note.miss { color: var(--vscode-inputValidation-warningForeground, #d7a000); }
 .tag-sub { color: #a855f7; font-weight: 600; }
+.off-head {
+  margin: 14px 0 6px; padding: 6px 9px; border-radius: 4px;
+  border: 1px dashed var(--vscode-inputValidation-warningForeground, #d7a000);
+  color: var(--muted); font-size: 11px; line-height: 1.5;
+}
 
 /* right detail */
 .detail { position: sticky; top: 12px; border: 1px solid var(--border); border-radius: 8px; padding: 14px; background: var(--card); min-height: 200px; }

@@ -2,7 +2,7 @@ import { basename } from "path";
 import { RawRecord, Segment, SegmentCategory, ConfigBlueprint, ContextGroup, CompactMetadata } from "./types";
 import { TokenEstimator } from "./tokenEstimator";
 import { PayloadCalibration, BUILTIN_CALIBRATION } from "./payloadModel";
-import { extractAgentId } from "./subagentLocator";
+import { extractAgentId, AgentLaunch } from "./subagentLocator";
 
 function decodeHook(att: any): { name: string; text: string } {
   const name = att.hookName ?? "unknown";
@@ -179,7 +179,7 @@ function applyBlueprint(segs: Segment[], blueprint: ConfigBlueprint, mk: Mk, gro
 // Single-turn view: only the selected turn's own records (fast; no prior history).
 export function assembleTurn(
   records: RawRecord[], blueprint: ConfigBlueprint, est: TokenEstimator,
-  cal: PayloadCalibration = BUILTIN_CALIBRATION, launches?: Map<string, string>
+  cal: PayloadCalibration = BUILTIN_CALIBRATION, launches?: AgentLaunch[]
 ): Segment[] {
   const mk = makeMk(est);
   const toolNameById = buildToolNameMap(records);
@@ -203,7 +203,7 @@ export function assembleTurn(
 // from and drops the other results. Joining only within the records being assembled
 // therefore finds at most one agent no matter how many ran. The in-record join stays
 // as the fallback for callers with no index (and for an agent's own nested calls).
-function linkSubagents(segs: Segment[], launches?: Map<string, string>): void {
+function linkSubagents(segs: Segment[], launches?: AgentLaunch[]): void {
   const calls = new Map<string, Segment>();
   for (const s of segs) if (s.category === "toolUse" && s.toolUseId) calls.set(s.toolUseId, s);
   for (const s of segs) {
@@ -212,9 +212,9 @@ function linkSubagents(segs: Segment[], launches?: Map<string, string>): void {
     if (call) { call.agentId = s.agentId; s.agentId = undefined; }
   }
   if (!launches) return;
-  for (const [toolUseId, agentId] of launches) {
-    const call = calls.get(toolUseId);
-    if (call && !call.agentId) call.agentId = agentId;
+  for (const l of launches) {
+    const call = calls.get(l.toolUseId);
+    if (call && !call.agentId) call.agentId = l.agentId;
   }
 }
 
@@ -306,7 +306,7 @@ function fmt(n?: number): string {
 // first-class segments carrying the real compaction metadata.
 export function assembleContext(
   records: RawRecord[], blueprint: ConfigBlueprint, est: TokenEstimator,
-  cal: PayloadCalibration = BUILTIN_CALIBRATION, launches?: Map<string, string>
+  cal: PayloadCalibration = BUILTIN_CALIBRATION, launches?: AgentLaunch[]
 ): AssembledContext {
   const mk = makeMk(est);
   const toolNameById = buildToolNameMap(records);

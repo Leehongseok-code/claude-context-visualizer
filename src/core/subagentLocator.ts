@@ -34,7 +34,30 @@ export function extractAgentId(text: string): string | undefined {
   return AGENT_ID_RE.exec(text)?.[1];
 }
 
-// Which Agent call launched which agent, for the whole session file.
+// Agents this session launched that the rendered context does not reach: their Agent
+// call sits on a branch the conversation moved off (an edited or re-sent prompt leaves
+// one behind). They ran for real and their transcripts exist, so they are worth
+// listing — apart from the context, never folded into it. Agents with no transcript on
+// disk are dropped: there would be nothing to open.
+export function offThreadLaunches(
+  launches: AgentLaunch[], inView: Set<string>, onDisk: Set<string>
+): AgentLaunch[] {
+  const seen = new Set<string>();
+  return launches.filter((l) => {
+    if (inView.has(l.agentId) || !onDisk.has(l.agentId) || seen.has(l.agentId)) return false;
+    seen.add(l.agentId);
+    return true;
+  });
+}
+
+export interface AgentLaunch {
+  toolUseId: string;
+  agentId: string;
+  description?: string; // the Agent call's short description input
+  prompt?: string;      // what the agent was asked to do
+}
+
+// Every Agent call in the session file and the agent it launched, in file order.
 //
 // This cannot be derived from an assembled context: launching several async agents
 // fans the transcript out — each result record hangs off its own tool_use — so the
@@ -44,8 +67,8 @@ export function extractAgentId(text: string): string | undefined {
 //
 // A tool_use_id is only accepted when an Agent/Task call in the file actually owns it,
 // so a stray "agentId:" in some other tool's output can never mint a link.
-export async function indexAgentLaunches(filePath: string): Promise<Map<string, string>> {
-  const agentCalls = new Set<string>();
+export async function indexAgentLaunches(filePath: string): Promise<AgentLaunch[]> {
+  const calls = new Map<string, { description?: string; prompt?: string }>();
   const claimed = new Map<string, string>();
   await forEachLine(filePath, (line) => {
     if (!line.trim()) return;
@@ -56,7 +79,7 @@ export async function indexAgentLaunches(filePath: string): Promise<Map<string, 
     for (const b of content) {
       if (!b || typeof b !== "object") continue;
       if (b.type === "tool_use" && b.id && (b.name === "Agent" || b.name === "Task")) {
-        agentCalls.add(b.id);
+        calls.set(b.id, { description: b.input?.description, prompt: b.input?.prompt });
       } else if (b.type === "tool_result" && b.tool_use_id) {
         const c = b.content;
         const text = typeof c === "string" ? c : JSON.stringify(c ?? "");
@@ -65,9 +88,10 @@ export async function indexAgentLaunches(filePath: string): Promise<Map<string, 
       }
     }
   });
-  const out = new Map<string, string>();
+  const out: AgentLaunch[] = [];
   for (const [toolUseId, agentId] of claimed) {
-    if (agentCalls.has(toolUseId)) out.set(toolUseId, agentId);
+    const call = calls.get(toolUseId);
+    if (call) out.push({ toolUseId, agentId, description: call.description, prompt: call.prompt });
   }
   return out;
 }
