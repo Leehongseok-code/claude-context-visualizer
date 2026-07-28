@@ -16,6 +16,12 @@ export interface WasteFlag { segmentId: string; kind: "large" | "repeated" | "es
 export interface ViewModel {
   segments: Segment[];
   totalTokens: number;
+  /** Sum of segments actually present in the transcript — no estimates mixed in. */
+  recordedTokens: number;
+  /** Exact input size from the response's `usage`, when the transcript carries one. */
+  measuredTokens?: number;
+  /** measured - recorded: the base prompt, tool schemas, and estimator error. */
+  unrecordedTokens?: number;
   byCategory: CategoryTotal[];
   top: Segment[];
   wasteFlags: WasteFlag[];
@@ -23,8 +29,12 @@ export interface ViewModel {
 
 const LARGE_THRESHOLD = 1500;
 
-export function buildViewModel(segments: Segment[], previous?: Segment[]): ViewModel {
+// `measured` is ground truth and `tokenEstimate` is not, so the two are reported side by
+// side rather than blended: the panel leads with what was measured and shows how much of
+// it the reconstruction accounts for, instead of presenting a sum of guesses as a total.
+export function buildViewModel(segments: Segment[], previous?: Segment[], measured?: number): ViewModel {
   const totalTokens = segments.reduce((n, s) => n + s.tokenEstimate, 0);
+  const recordedTokens = segments.reduce((n, s) => (s.estimated ? n : n + s.tokenEstimate), 0);
 
   const byMap = new Map<SegmentCategory, number>();
   for (const s of segments) byMap.set(s.category, (byMap.get(s.category) ?? 0) + s.tokenEstimate);
@@ -43,5 +53,9 @@ export function buildViewModel(segments: Segment[], previous?: Segment[]): ViewM
     if (s.rawText && prevTexts.has(s.rawText)) wasteFlags.push({ segmentId: s.id, kind: "repeated", detail: "Re-injected from previous turn." });
   }
 
-  return { segments, totalTokens, byCategory, top, wasteFlags };
+  return {
+    segments, totalTokens, recordedTokens, byCategory, top, wasteFlags,
+    measuredTokens: measured,
+    unrecordedTokens: measured == null ? undefined : Math.max(0, measured - recordedTokens),
+  };
 }

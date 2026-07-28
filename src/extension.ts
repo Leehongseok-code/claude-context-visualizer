@@ -136,7 +136,7 @@ export function activate(context: vscode.ExtensionContext) {
           }
         }
         if (!segments) segments = assembleTurn([], blueprint, est); // blueprint fallback
-        const vm = buildViewModel(segments, prev);
+        const vm = buildViewModel(segments, prev, usage?.realContextTokens);
         panel.webview.postMessage({
           type: "render", vm, groups, usage, mode, sessionId, turn: turnIdx, totalTurns, refreshed,
           offThreadAgents: sessionId ? await offThreadAgents(sessionId, segments) : [],

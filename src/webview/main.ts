@@ -324,13 +324,29 @@ function toggleCategory(cat: string) {
 function renderHeader(v: ViewModel) {
   const el = document.getElementById("summary")!;
   const waste = v.wasteFlags.length ? `<span class="waste-badge" title="optimization flags">⚠ ${v.wasteFlags.length}</span>` : "";
-  if (usage && viewMode === "context") {
+  if (usage && viewMode === "context" && v.measuredTokens != null) {
+    // Measured leads; the reconstruction is reported against it rather than as a total of
+    // its own, so the part the transcript never recorded stays visible instead of implied.
+    // The per-segment estimator can overshoot the measurement. Saying "159% reconstructed"
+    // with a 0 remainder would dress that up as a finding, so an overshoot is labelled as
+    // what it is: the estimate exceeding ground truth.
+    const over = v.recordedTokens > v.measuredTokens;
+    const pctRec = Math.round((v.recordedTokens / Math.max(1, v.measuredTokens)) * 100);
     el.innerHTML =
       `<div class="hrow">` +
-      `<span class="total">${usage.realContextTokens.toLocaleString()}</span>` +
-      `<span class="total-label">real context tokens (from usage) · ${v.segments.length} segments ` +
-      `<span class="muted">— cache-read ${usage.cacheRead.toLocaleString()} · fresh ${usage.freshInput.toLocaleString()} · out ${usage.output.toLocaleString()}; per-segment sizes below are estimated</span></span>` +
-      waste + `</div>`;
+      `<span class="total">${v.measuredTokens.toLocaleString()}</span>` +
+      `<span class="total-label">measured context tokens · ${v.segments.length} segments` +
+      `<span class="muted"> — cache-read ${usage.cacheRead.toLocaleString()} · fresh ${usage.freshInput.toLocaleString()} · out ${usage.output.toLocaleString()}</span></span>` +
+      waste + `</div>` +
+      `<div class="hrow split">` +
+      `<span class="chip-num${over ? " over" : ""}" title="Sum of the segments the transcript actually contains, at estimated per-segment sizes. ` +
+      `${over ? "Here that sum runs past the measured total, so the estimator is overshooting on this session's content — read the shares below as relative, not absolute."
+              : "It tracks the measured total only approximately."}">` +
+      `≈ ${v.recordedTokens.toLocaleString()} reconstructed <b>${pctRec}%</b>${over ? " ⚠ over-estimated" : ""}</span>` +
+      (over ? "" :
+        `<span class="chip-num" title="Measured minus reconstructed: the base system prompt and tool schemas (never written to the transcript), plus estimator error.">` +
+        `≈ ${v.unrecordedTokens!.toLocaleString()} not in transcript</span>`) +
+      `</div>`;
   } else {
     el.innerHTML =
       `<div class="hrow">` +
@@ -343,13 +359,30 @@ function renderHeader(v: ViewModel) {
 function renderBar(v: ViewModel) {
   const bar = document.getElementById("bar")!;
   bar.innerHTML = "";
-  const total = Math.max(1, v.totalTokens);
-  for (const c of v.byCategory) {
+  // With a measured total the bar is drawn against it, and the two estimated rows give
+  // way to a single slice sized by measurement — so the width of what the transcript
+  // never recorded is observed rather than asserted.
+  const measured = v.measuredTokens;
+  // max(measured, recorded) so an overshooting estimate fills the bar instead of being
+  // silently clipped by the overflow:hidden track.
+  const total = Math.max(1, measured == null ? v.totalTokens : Math.max(measured, v.recordedTokens));
+  const cats = measured == null
+    ? v.byCategory
+    : v.byCategory.filter((c) => c.category !== "baseSystemPrompt" && c.category !== "toolDefinitions");
+  for (const c of cats) {
     const seg = document.createElement("div");
     seg.className = "bar-seg" + (hidden.has(c.category) ? " dim" : "");
     seg.style.width = `${(c.tokens / total) * 100}%`;
     seg.style.background = categoryColor(c.category);
     seg.title = `${c.category}: ${c.tokens.toLocaleString()} (${pct(c.tokens)})`;
+    bar.appendChild(seg);
+  }
+  if (measured != null && v.unrecordedTokens) {
+    const seg = document.createElement("div");
+    seg.className = "bar-seg unrec";
+    seg.style.width = `${(v.unrecordedTokens / total) * 100}%`;
+    seg.title = `not in transcript (base prompt, tool schemas, estimator error): ` +
+      `${v.unrecordedTokens.toLocaleString()} (${pct(v.unrecordedTokens)})`;
     bar.appendChild(seg);
   }
   const legend = document.getElementById("legend")!;
@@ -643,9 +676,14 @@ function renderDetail(s: any) {
 }
 
 // ---- utils ----
+// Share of the measured context when one was recorded, so a segment's percentage means
+// "of what the model actually received" rather than "of our own sum of estimates".
 function pct(tokens: number): string {
-  if (!vm || vm.totalTokens === 0) return "0%";
-  return ((tokens / vm.totalTokens) * 100).toFixed(1) + "%";
+  const total = vm?.measuredTokens == null
+    ? vm?.totalTokens ?? 0
+    : Math.max(vm.measuredTokens, vm.recordedTokens);
+  if (!total) return "0%";
+  return ((tokens / total) * 100).toFixed(1) + "%";
 }
 function shortId(id: string): string { return id.length > 12 ? id.slice(0, 8) + "…" : id; }
 // Tidy up slash-command / caveat wrappers so the session preview reads cleanly.

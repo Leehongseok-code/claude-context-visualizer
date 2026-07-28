@@ -98,8 +98,16 @@ body {
 
 /* header */
 .hrow { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.hrow.split { margin-top: -4px; gap: 8px; font-size: 12px; }
 .total { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; }
 .total-label { color: var(--muted); }
+/* measured vs reconstructed: two figures of different provenance, never summed together */
+.chip-num {
+  padding: 2px 9px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--card); color: var(--muted); cursor: help; font-variant-numeric: tabular-nums;
+}
+.chip-num b { color: var(--vscode-editor-foreground); font-weight: 600; }
+.chip-num.over { border-color: #d97706; color: var(--vscode-editor-foreground); }
 .waste-badge {
   margin-left: auto; padding: 2px 9px; border-radius: 999px;
   background: var(--vscode-inputValidation-warningBackground, #6b4d00);
@@ -109,6 +117,8 @@ body {
 
 /* proportional composition bar */
 .bar { display: flex; width: 100%; height: 14px; border-radius: 7px; overflow: hidden; border: 1px solid var(--border); }
+/* the measured remainder the transcript never recorded — hatched like the estimated rows */
+.bar-seg.unrec { background-image: repeating-linear-gradient(45deg, rgba(128,128,128,0.30) 0 5px, rgba(128,128,128,0.14) 5px 10px); }
 .bar-seg { height: 100%; transition: filter .15s, opacity .15s; }
 .bar-seg:hover { filter: brightness(1.2); }
 .bar-seg.dim { opacity: 0.18; }

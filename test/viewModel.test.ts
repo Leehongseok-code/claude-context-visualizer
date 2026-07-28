@@ -23,6 +23,23 @@ describe("viewModel", () => {
     const vm = buildViewModel([seg("cur", "hook", 50, "ROUTER REMINDER")], prev);
     expect(vm.wasteFlags.some(f => f.kind === "repeated")).toBe(true);
   });
+  it("counts only transcript-backed segments as recorded", () => {
+    const vm = buildViewModel([seg("a", "user", 10), seg("est", "toolDefinitions", 23000, "", true)]);
+    expect(vm.totalTokens).toBe(23010);
+    expect(vm.recordedTokens).toBe(10); // the estimate is not evidence
+    expect(vm.measuredTokens).toBeUndefined();
+    expect(vm.unrecordedTokens).toBeUndefined();
+  });
+  it("reports the measured total and what the reconstruction misses", () => {
+    const vm = buildViewModel([seg("a", "user", 400), seg("est", "toolDefinitions", 23000, "", true)], undefined, 1000);
+    expect(vm.measuredTokens).toBe(1000);
+    expect(vm.recordedTokens).toBe(400);
+    expect(vm.unrecordedTokens).toBe(600); // measured - recorded, estimates excluded
+  });
+  it("never reports a negative remainder when the estimator overshoots", () => {
+    const vm = buildViewModel([seg("a", "user", 5000)], undefined, 1000);
+    expect(vm.unrecordedTokens).toBe(0);
+  });
   it("gives every category a distinct color string", () => {
     expect(categoryColor("hook")).toMatch(/^#/);
     expect(categoryColor("hook")).not.toBe(categoryColor("user"));
