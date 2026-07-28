@@ -11,6 +11,17 @@ const styleEl = document.createElement("style");
 styleEl.textContent = STYLES;
 document.head.appendChild(styleEl);
 
+// The sticky breadcrumb bar wraps to a second line on a narrow panel, so its height is
+// not a constant. Publish the measured height as --topbar-h so the sticky detail pane
+// parks below the bar instead of scrolling under it.
+const crumbsEl = document.getElementById("crumbs");
+if (crumbsEl && typeof ResizeObserver !== "undefined") {
+  new ResizeObserver(() => {
+    const h = Math.round(crumbsEl.getBoundingClientRect().height);
+    if (h > 0) document.documentElement.style.setProperty("--topbar-h", `${h}px`);
+  }).observe(crumbsEl);
+}
+
 // ---- state ----
 type Mode = "sessions" | "turns" | "context";
 interface SessionMeta { id: string; mtimeMs: number; preview?: string; }

@@ -4,6 +4,9 @@ export const STYLES = `
   --border: var(--vscode-panel-border, rgba(128,128,128,0.35));
   --muted: var(--vscode-descriptionForeground, #999);
   --card: var(--vscode-editorWidget-background, rgba(128,128,128,0.08));
+  /* live height of the sticky breadcrumb bar; measured in main.ts so anything else that
+     sticks (the detail pane) can park below it instead of under it. */
+  --topbar-h: 44px;
 }
 * { box-sizing: border-box; }
 body {
@@ -32,8 +35,16 @@ body {
 .tb-count { color: var(--muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .tb-note { color: var(--muted); font-style: italic; }
 
-/* breadcrumbs */
-.crumbs { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; font-size: 13px; }
+/* breadcrumbs — pinned to the top of the scroll area so the trail and Refresh stay
+   reachable in a long context. The negative margins cancel #app's padding so the bar is
+   full-bleed and scrolled content passes *under* an opaque strip, not beside it. */
+.crumbs {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px;
+  margin: -14px -16px 12px; padding: 14px 16px 10px;
+  background: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--border);
+}
 .crumb { cursor: pointer; color: var(--vscode-textLink-foreground, #3794ff); }
 .crumb.active { color: var(--vscode-editor-foreground); cursor: default; font-weight: 600; }
 .crumb:not(.active):hover { text-decoration: underline; }
@@ -116,6 +127,7 @@ body {
 /* narrow (side-docked) panel: stack the panes, detail no longer sticky */
 @media (max-width: 680px) {
   #app { padding: 10px 12px; }
+  .crumbs { margin: -10px -12px 10px; padding: 10px 12px 8px; } /* match the tighter padding */
   .panes { grid-template-columns: 1fr; }
   .detail { position: static; }
   .d-raw, .hl, .d-md { max-height: 45vh; }
@@ -172,7 +184,7 @@ body {
 }
 
 /* right detail */
-.detail { position: sticky; top: 12px; border: 1px solid var(--border); border-radius: 8px; padding: 14px; background: var(--card); min-height: 200px; }
+.detail { position: sticky; top: calc(var(--topbar-h) + 12px); border: 1px solid var(--border); border-radius: 8px; padding: 14px; background: var(--card); min-height: 200px; }
 .d-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .d-badge { color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
 .d-title { font-size: 15px; font-weight: 700; word-break: break-all; }
