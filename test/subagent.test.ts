@@ -50,10 +50,21 @@ describe("assembleTurn + Agent results", () => {
     },
   ];
 
-  it("tags the Agent tool_result with the agentId it launched", () => {
+  it("hangs the subagent off the Agent call, not its result", () => {
     const segs = assembleTurn(records, bp, est);
+    const call = segs.find((s) => s.category === "toolUse");
     const res = segs.find((s) => s.category === "toolResult");
-    expect(res?.agentId).toBe("a1b2c3d4e5f6a7b8");
+    expect(call?.agentId).toBe("a1b2c3d4e5f6a7b8"); // the call holds the prompt
+    expect(res?.agentId).toBeUndefined();           // moved off the launch metadata
+  });
+
+  it("tags nothing when the call is absent — the tool is then unidentifiable", () => {
+    // Only reachable if a result were ever separated from its call; in practice a
+    // tool_result comes back within the request that issued it, so both are always
+    // in the same turn. Without the call, the result's tool name is unknown and the
+    // agentId marker is deliberately not trusted on its own.
+    const segs = assembleTurn([records[1]], bp, est);
+    expect(segs.find((s) => s.category === "toolResult")?.agentId).toBeUndefined();
   });
 
   it("leaves non-Agent tool results untagged", () => {

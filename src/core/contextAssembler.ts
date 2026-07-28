@@ -116,6 +116,7 @@ function classifyRecord(rec: RawRecord, mk: Mk, toolNameById: Map<string, string
           const label = name ? toolSource(name, undefined).replace(/^tool:|^skill:|^mcp:/, "") : "tool";
           const { text, imageCount } = toolResultContent(b.content, rec.toolUseResult);
           const seg = mk("toolResult", `result:${name ? label : "tool"}`, text);
+          seg.toolUseId = b.tool_use_id;
           // An Agent/Task result names the subagent it launched; that id is what
           // lets the panel pull in that agent's own transcript on demand.
           if (name === "Agent" || name === "Task") seg.agentId = extractAgentId(text);
@@ -135,7 +136,11 @@ function classifyRecord(rec: RawRecord, mk: Mk, toolNameById: Map<string, string
     for (const b of content) {
       if (b?.type === "thinking") out.push(applyAttribution(mk("thinking", "assistant:thinking", b.thinking ?? ""), rec));
       else if (b?.type === "text") out.push(applyAttribution(mk("assistant", "assistant", b.text ?? ""), rec));
-      else if (b?.type === "tool_use") out.push(mk("toolUse", toolSource(b.name, b.input), prettyInput(b.input)));
+      else if (b?.type === "tool_use") {
+        const seg = mk("toolUse", toolSource(b.name, b.input), prettyInput(b.input));
+        seg.toolUseId = b.id;
+        out.push(seg);
+      }
     }
   }
   return out;
@@ -182,7 +187,25 @@ export function assembleTurn(
   for (const rec of records) segs.push(...classifyRecord(rec, mk, toolNameById));
   applyBlueprint(segs, blueprint, mk);
   markStrippedThinking(segs);
+  linkSubagents(segs);
   return segs;
+}
+
+// The agentId only ever appears in the Agent/Task *result*, but the call is the
+// better place to hang the subagent off: it holds the prompt the agent was given,
+// so "what I asked" reads directly into "what it did". For an async agent the
+// result is just launch metadata, which makes it a poor anchor for a whole
+// conversation. A call and its result always land in the same turn (a tool_result
+// comes back within the request that issued it — checked against 65 real Agent
+// calls, none split), so the call is in view whenever the result is.
+function linkSubagents(segs: Segment[]): void {
+  const calls = new Map<string, Segment>();
+  for (const s of segs) if (s.category === "toolUse" && s.toolUseId) calls.set(s.toolUseId, s);
+  for (const s of segs) {
+    if (s.category !== "toolResult" || !s.agentId || !s.toolUseId) continue;
+    const call = calls.get(s.toolUseId);
+    if (call) { call.agentId = s.agentId; s.agentId = undefined; }
+  }
 }
 
 // A subagent's own transcript. It ran in a separate context window, so its segments
@@ -199,6 +222,7 @@ export function assembleSubagent(
   for (const rec of records) segs.push(...classifyRecord(rec, mk, toolNameById));
   for (const s of segs) { s.depth = depth; s.separateContext = true; }
   markStrippedThinking(segs);
+  linkSubagents(segs); // an agent can spawn its own agents — same anchoring one level down
   return segs;
 }
 
@@ -323,6 +347,7 @@ export function assembleContext(
 
   applyBlueprint(segments, blueprint, mk, SYS);
   markStrippedThinking(segments);
+  linkSubagents(segments);
 
   // The last real turn group is the "current" turn; everything before it is history.
   const lastTurn = [...groups].reverse().find((g) => g.id.startsWith("g-turn-"));

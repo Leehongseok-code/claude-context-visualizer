@@ -51,7 +51,8 @@ export interface Segment {
   groupLabel?: string;
   isHistory?: boolean;    // true = belongs to a prior turn carried in as history
   compaction?: CompactMetadata; // set on a compactionSummary segment
-  agentId?: string;       // set on the Agent/Task tool_result that launched a subagent
+  toolUseId?: string;     // the tool_use id, on both the call and its result — joins the two
+  agentId?: string;       // the subagent this Agent/Task call launched (see linkSubagents)
   depth?: number;         // nesting level: 0 = this session, 1 = subagent, 2 = its subagent
   separateContext?: boolean; // subagent segment — its own context window, not this one's
 }
