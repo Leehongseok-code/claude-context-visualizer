@@ -2,6 +2,7 @@ import { basename } from "path";
 import { RawRecord, Segment, SegmentCategory, ConfigBlueprint, ContextGroup, CompactMetadata } from "./types";
 import { TokenEstimator } from "./tokenEstimator";
 import { PayloadCalibration, BUILTIN_CALIBRATION } from "./payloadModel";
+import { extractAgentId, AgentLaunch } from "./subagentLocator";
 
 function decodeHook(att: any): { name: string; text: string } {
   const name = att.hookName ?? "unknown";
@@ -69,10 +70,10 @@ function toolResultContent(blockContent: any, toolUseResult: any): ToolResultCon
 
 type Mk = (category: SegmentCategory, source: string, rawText: string, opts?: Partial<Segment>) => Segment;
 
-function makeMk(est: TokenEstimator): Mk {
+function makeMk(est: TokenEstimator, prefix = "seg"): Mk {
   let counter = 0;
   return (category, source, rawText, opts = {}) => ({
-    id: `seg-${counter++}`,
+    id: `${prefix}-${counter++}`,
     category, source, rawText,
     tokenEstimate: opts.estimated ? (opts.tokenEstimate ?? 0) : est.estimate(rawText),
     estimated: opts.estimated ?? false,
@@ -115,6 +116,10 @@ function classifyRecord(rec: RawRecord, mk: Mk, toolNameById: Map<string, string
           const label = name ? toolSource(name, undefined).replace(/^tool:|^skill:|^mcp:/, "") : "tool";
           const { text, imageCount } = toolResultContent(b.content, rec.toolUseResult);
           const seg = mk("toolResult", `result:${name ? label : "tool"}`, text);
+          seg.toolUseId = b.tool_use_id;
+          // An Agent/Task result names the subagent it launched; that id is what
+          // lets the panel pull in that agent's own transcript on demand.
+          if (name === "Agent" || name === "Task") seg.agentId = extractAgentId(text);
           if (imageCount > 0) {
             seg.tokenEstimate += imageCount * IMAGE_TOKEN_ESTIMATE;
             seg.note = `Includes ${imageCount} image${imageCount > 1 ? "s" : ""} — billed as image tokens (~${IMAGE_TOKEN_ESTIMATE.toLocaleString()} each), not as base64 text.`;
@@ -131,7 +136,11 @@ function classifyRecord(rec: RawRecord, mk: Mk, toolNameById: Map<string, string
     for (const b of content) {
       if (b?.type === "thinking") out.push(applyAttribution(mk("thinking", "assistant:thinking", b.thinking ?? ""), rec));
       else if (b?.type === "text") out.push(applyAttribution(mk("assistant", "assistant", b.text ?? ""), rec));
-      else if (b?.type === "tool_use") out.push(mk("toolUse", toolSource(b.name, b.input), prettyInput(b.input)));
+      else if (b?.type === "tool_use") {
+        const seg = mk("toolUse", toolSource(b.name, b.input), prettyInput(b.input));
+        seg.toolUseId = b.id;
+        out.push(seg);
+      }
     }
   }
   return out;
@@ -170,7 +179,7 @@ function applyBlueprint(segs: Segment[], blueprint: ConfigBlueprint, mk: Mk, gro
 // Single-turn view: only the selected turn's own records (fast; no prior history).
 export function assembleTurn(
   records: RawRecord[], blueprint: ConfigBlueprint, est: TokenEstimator,
-  cal: PayloadCalibration = BUILTIN_CALIBRATION
+  cal: PayloadCalibration = BUILTIN_CALIBRATION, launches?: AgentLaunch[]
 ): Segment[] {
   const mk = makeMk(est);
   const toolNameById = buildToolNameMap(records);
@@ -178,6 +187,54 @@ export function assembleTurn(
   for (const rec of records) segs.push(...classifyRecord(rec, mk, toolNameById));
   applyBlueprint(segs, blueprint, mk);
   markStrippedThinking(segs);
+  linkSubagents(segs, launches);
+  return segs;
+}
+
+// The agentId only ever appears in the Agent/Task *result*, but the call is the
+// better place to hang the subagent off: it holds the prompt the agent was given,
+// so "what I asked" reads directly into "what it did". For an async agent the
+// result is just launch metadata, which makes it a poor anchor for a whole
+// conversation.
+//
+// `launches` is the session-wide tool_use_id -> agentId index. It is needed because
+// async agents launched together fan the transcript out: each result hangs off its own
+// tool_use, so the parentUuid thread keeps the one branch the conversation continued
+// from and drops the other results. Joining only within the records being assembled
+// therefore finds at most one agent no matter how many ran. The in-record join stays
+// as the fallback for callers with no index (and for an agent's own nested calls).
+function linkSubagents(segs: Segment[], launches?: AgentLaunch[]): void {
+  const calls = new Map<string, Segment>();
+  for (const s of segs) if (s.category === "toolUse" && s.toolUseId) calls.set(s.toolUseId, s);
+  for (const s of segs) {
+    if (s.category !== "toolResult" || !s.agentId || !s.toolUseId) continue;
+    const call = calls.get(s.toolUseId);
+    if (call) { call.agentId = s.agentId; s.agentId = undefined; }
+  }
+  if (!launches) return;
+  for (const l of launches) {
+    const call = calls.get(l.toolUseId);
+    if (call && !call.agentId) call.agentId = l.agentId;
+  }
+}
+
+// A subagent's own transcript. It ran in a separate context window, so its segments
+// are marked `separateContext` and carry a nesting depth — the panel indents them
+// under the Agent call that launched them and keeps them out of this turn's totals.
+// No estimated header here: the base prompt/tool schemas are calibrated for the main
+// agent, and guessing a subagent's would be inventing numbers.
+export function assembleSubagent(
+  records: RawRecord[], est: TokenEstimator, agentId: string, depth: number
+): Segment[] {
+  const mk = makeMk(est, `sub${depth}-${agentId}`);
+  const toolNameById = buildToolNameMap(records);
+  const segs: Segment[] = [];
+  for (const rec of records) segs.push(...classifyRecord(rec, mk, toolNameById));
+  for (const s of segs) { s.depth = depth; s.separateContext = true; }
+  markStrippedThinking(segs);
+  // An agent can spawn its own agents; no launch index is needed here because this
+  // reads the agent's whole file rather than a thread, so no result is filtered out.
+  linkSubagents(segs);
   return segs;
 }
 
@@ -249,7 +306,7 @@ function fmt(n?: number): string {
 // first-class segments carrying the real compaction metadata.
 export function assembleContext(
   records: RawRecord[], blueprint: ConfigBlueprint, est: TokenEstimator,
-  cal: PayloadCalibration = BUILTIN_CALIBRATION
+  cal: PayloadCalibration = BUILTIN_CALIBRATION, launches?: AgentLaunch[]
 ): AssembledContext {
   const mk = makeMk(est);
   const toolNameById = buildToolNameMap(records);
@@ -302,6 +359,7 @@ export function assembleContext(
 
   applyBlueprint(segments, blueprint, mk, SYS);
   markStrippedThinking(segments);
+  linkSubagents(segments, launches);
 
   // The last real turn group is the "current" turn; everything before it is history.
   const lastTurn = [...groups].reverse().find((g) => g.id.startsWith("g-turn-"));

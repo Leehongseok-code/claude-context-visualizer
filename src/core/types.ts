@@ -51,6 +51,10 @@ export interface Segment {
   groupLabel?: string;
   isHistory?: boolean;    // true = belongs to a prior turn carried in as history
   compaction?: CompactMetadata; // set on a compactionSummary segment
+  toolUseId?: string;     // the tool_use id, on both the call and its result — joins the two
+  agentId?: string;       // the subagent this Agent/Task call launched (see linkSubagents)
+  depth?: number;         // nesting level: 0 = this session, 1 = subagent, 2 = its subagent
+  separateContext?: boolean; // subagent segment — its own context window, not this one's
 }
 
 export interface ContextGroup {
@@ -85,7 +89,7 @@ export interface TurnIndex {
   byteEnd: number;
   promptPreview: string;
   timestamp?: string;
-  uuid?: string;       // the turn-start record's uuid — the leaf we reconstruct context from
+  uuid?: string;       // last record descending from this turn's prompt — the leaf we reconstruct context from
 }
 
 // Lightweight per-record metadata built in one streaming pass, used to walk the
@@ -94,4 +98,7 @@ export interface UuidMeta {
   parentUuid: string | null;
   byteStart: number;
   byteEnd: number;
+  requestId?: string;      // assistant records of one API response share this
+  toolUseIds?: string[];   // tool_use ids this record issues
+  toolResultIds?: string[]; // tool_use ids this record answers
 }

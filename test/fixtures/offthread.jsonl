@@ -1,0 +1,8 @@
+{"type":"user","uuid":"U1","parentUuid":null,"promptId":"p1","cwd":"/tmp/ws","sessionId":"s9","message":{"role":"user","content":"first task"}}
+{"type":"assistant","uuid":"A1","parentUuid":"U1","requestId":"req_1","cwd":"/tmp/ws","sessionId":"s9","message":{"role":"assistant","content":[{"type":"text","text":"answer one"}]}}
+{"type":"system","subtype":"turn_duration","uuid":"D1","parentUuid":"A1","cwd":"/tmp/ws","sessionId":"s9"}
+{"type":"user","uuid":"U2","parentUuid":"D1","promptId":"p2","cwd":"/tmp/ws","sessionId":"s9","message":{"role":"user","content":"second task"}}
+{"type":"system","subtype":"away_summary","uuid":"AW","parentUuid":"D1","cwd":"/tmp/ws","sessionId":"s9"}
+{"type":"user","uuid":"U3","parentUuid":"AW","promptId":"p3","cwd":"/tmp/ws","sessionId":"s9","message":{"role":"user","content":"third task"}}
+{"type":"assistant","uuid":"A3","parentUuid":"U3","requestId":"req_3","cwd":"/tmp/ws","sessionId":"s9","message":{"role":"assistant","content":[{"type":"text","text":"answer three"}]}}
+{"type":"system","subtype":"compact_boundary","uuid":"CB","parentUuid":null,"logicalParentUuid":"A3","compactMetadata":{"trigger":"auto","preTokens":900,"postTokens":100},"cwd":"/tmp/ws","sessionId":"s9"}

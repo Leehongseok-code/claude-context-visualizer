@@ -1,0 +1,4 @@
+{"parentUuid":null,"isSidechain":true,"agentId":"a1b2c3d4e5f6a7b8","sessionId":"s1","type":"user","uuid":"u1","message":{"role":"user","content":"Find every caller of judgePermanent and report the file paths."}}
+{"parentUuid":"u1","isSidechain":true,"agentId":"a1b2c3d4e5f6a7b8","sessionId":"s1","type":"assistant","uuid":"u2","message":{"role":"assistant","content":[{"type":"thinking","thinking":"grep first"},{"type":"tool_use","id":"t1","name":"Grep","input":{"pattern":"judgePermanent"}}]}}
+{"parentUuid":"u2","isSidechain":true,"agentId":"a1b2c3d4e5f6a7b8","sessionId":"s1","type":"user","uuid":"u3","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"src/engine.ts:44\nsrc/api.ts:12"}]}}
+{"parentUuid":"u3","isSidechain":true,"agentId":"a1b2c3d4e5f6a7b8","sessionId":"s1","type":"assistant","uuid":"u4","message":{"role":"assistant","content":[{"type":"text","text":"Two callers: src/engine.ts:44 and src/api.ts:12."}]}}

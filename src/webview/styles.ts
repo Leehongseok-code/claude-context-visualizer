@@ -4,6 +4,9 @@ export const STYLES = `
   --border: var(--vscode-panel-border, rgba(128,128,128,0.35));
   --muted: var(--vscode-descriptionForeground, #999);
   --card: var(--vscode-editorWidget-background, rgba(128,128,128,0.08));
+  /* live height of the sticky breadcrumb bar; measured in main.ts so anything else that
+     sticks (the detail pane) can park below it instead of under it. */
+  --topbar-h: 44px;
 }
 * { box-sizing: border-box; }
 body {
@@ -32,12 +35,23 @@ body {
 .tb-count { color: var(--muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .tb-note { color: var(--muted); font-style: italic; }
 
-/* breadcrumbs */
-.crumbs { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; font-size: 13px; }
+/* breadcrumbs — pinned to the top of the scroll area so the trail and Refresh stay
+   reachable in a long context. The negative margins cancel #app's padding so the bar is
+   full-bleed and scrolled content passes *under* an opaque strip, not beside it. */
+.crumbs {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px;
+  margin: -14px -16px 12px; padding: 14px 16px 10px;
+  background: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--border);
+}
 .crumb { cursor: pointer; color: var(--vscode-textLink-foreground, #3794ff); }
 .crumb.active { color: var(--vscode-editor-foreground); cursor: default; font-weight: 600; }
 .crumb:not(.active):hover { text-decoration: underline; }
 .sep { color: var(--muted); }
+.crumbs .upd { margin-left: auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.crumbs .tb-btn.refresh { margin-left: 4px; font-size: 12px; }
+.crumbs .tb-btn.refresh:not(:disabled):hover { background: var(--vscode-button-secondaryHoverBackground, rgba(128,128,128,0.28)); }
 
 /* pick lists (session / turn) */
 .picklist { display: flex; flex-direction: column; gap: 4px; }
@@ -113,6 +127,7 @@ body {
 /* narrow (side-docked) panel: stack the panes, detail no longer sticky */
 @media (max-width: 680px) {
   #app { padding: 10px 12px; }
+  .crumbs { margin: -10px -12px 10px; padding: 10px 12px 8px; } /* match the tighter padding */
   .panes { grid-template-columns: 1fr; }
   .detail { position: static; }
   .d-raw, .hl, .d-md { max-height: 45vh; }
@@ -148,8 +163,28 @@ body {
 .row-fill { height: 100%; background: var(--cat); }
 .flag { font-size: 11px; opacity: .85; }
 
+/* subagent rows: indented under the Agent call, dimmed because they belong to a
+   separate context window rather than this turn's */
+.row-caret { color: var(--muted); width: 10px; flex: none; cursor: pointer; }
+.row-caret:hover { color: var(--vscode-editor-foreground); }
+.row.sub { opacity: 0.92; background: rgba(124,58,237,0.06); }
+.row.sub .row-source { font-weight: 500; }
+.sub-head {
+  margin: 6px 0 2px; padding: 4px 8px; border-radius: 4px;
+  border-left: 2px dashed #7c3aed; background: rgba(124,58,237,0.1);
+  color: var(--muted); font-size: 11px;
+}
+.sub-note { margin: 4px 0; padding: 4px 8px; color: var(--muted); font-size: 11px; font-style: italic; }
+.sub-note.miss { color: var(--vscode-inputValidation-warningForeground, #d7a000); }
+.tag-sub { color: #a855f7; font-weight: 600; }
+.off-head {
+  margin: 14px 0 6px; padding: 6px 9px; border-radius: 4px;
+  border: 1px dashed var(--vscode-inputValidation-warningForeground, #d7a000);
+  color: var(--muted); font-size: 11px; line-height: 1.5;
+}
+
 /* right detail */
-.detail { position: sticky; top: 12px; border: 1px solid var(--border); border-radius: 8px; padding: 14px; background: var(--card); min-height: 200px; }
+.detail { position: sticky; top: calc(var(--topbar-h) + 12px); border: 1px solid var(--border); border-radius: 8px; padding: 14px; background: var(--card); min-height: 200px; }
 .d-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .d-badge { color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
 .d-title { font-size: 15px; font-weight: 700; word-break: break-all; }
