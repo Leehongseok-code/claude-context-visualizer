@@ -319,19 +319,23 @@ export interface AssembledContext {
 }
 
 // The real context size for a request = input + cache_creation + cache_read tokens.
+//
+// An all-zero usage block is skipped rather than believed: Claude Code writes one on a
+// record that never became an API request (a local stop-sequence completion, an aborted
+// turn), and every field being 0 is not a measurement of an empty context — it is the
+// absence of a measurement. Taking it at face value discarded the real figure sitting one
+// record earlier, and the panel then scaled by its own estimate, which keeps growing
+// after a compaction and made the context look like it had never shrunk.
 function readUsage(records: RawRecord[]): ContextUsage | undefined {
   for (let i = records.length - 1; i >= 0; i--) {
     const u = (records[i]?.message as any)?.usage;
-    if (u && (u.input_tokens != null || u.cache_read_input_tokens != null)) {
-      const freshInput = u.input_tokens ?? 0;
-      const cacheCreation = u.cache_creation_input_tokens ?? 0;
-      const cacheRead = u.cache_read_input_tokens ?? 0;
-      return {
-        realContextTokens: freshInput + cacheCreation + cacheRead,
-        cacheRead, cacheCreation, freshInput,
-        output: u.output_tokens ?? 0,
-      };
-    }
+    if (!u) continue;
+    const freshInput = u.input_tokens ?? 0;
+    const cacheCreation = u.cache_creation_input_tokens ?? 0;
+    const cacheRead = u.cache_read_input_tokens ?? 0;
+    const realContextTokens = freshInput + cacheCreation + cacheRead;
+    if (realContextTokens <= 0) continue;
+    return { realContextTokens, cacheRead, cacheCreation, freshInput, output: u.output_tokens ?? 0 };
   }
   return undefined;
 }

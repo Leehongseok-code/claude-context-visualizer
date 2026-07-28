@@ -1,0 +1,3 @@
+{"type":"user","uuid":"U1","parentUuid":null,"promptId":"p1","message":{"role":"user","content":"do the thing"}}
+{"type":"assistant","uuid":"A1","parentUuid":"U1","requestId":"req_1","message":{"role":"assistant","content":[{"type":"text","text":"working"}],"usage":{"input_tokens":2,"cache_creation_input_tokens":1796,"cache_read_input_tokens":302965,"output_tokens":487}}}
+{"type":"assistant","uuid":"A2","parentUuid":"A1","requestId":"req_2","message":{"role":"assistant","content":[{"type":"text","text":""}],"stop_reason":"stop_sequence","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}
