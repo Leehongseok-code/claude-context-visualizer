@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { join } from "path";
-import { findSubagentFiles, extractAgentId } from "../src/core/subagentLocator";
-import { readAllRecords } from "../src/core/transcriptParser";
-import { assembleTurn, assembleSubagent } from "../src/core/contextAssembler";
+import { findSubagentFiles, extractAgentId, indexAgentLaunches } from "../src/core/subagentLocator";
+import { readAllRecords, indexByUuid, buildThread } from "../src/core/transcriptParser";
+import { assembleTurn, assembleContext, assembleSubagent } from "../src/core/contextAssembler";
 import { HeuristicTokenEstimator } from "../src/core/tokenEstimator";
 import { RawRecord, ConfigBlueprint } from "../src/core/types";
 
@@ -74,6 +74,40 @@ describe("assembleTurn + Agent results", () => {
     ];
     const segs = assembleTurn(plain, bp, est);
     expect(segs.find((s) => s.category === "toolResult")?.agentId).toBeUndefined();
+  });
+});
+
+// Launching several async agents fans the transcript out: each result attaches to its
+// own tool_use record, so only the branch the conversation continued from stays on the
+// parentUuid thread. The agentId lives in those results, so a thread-local join loses
+// every agent but one — the link has to come from the whole session file.
+describe("agent launches across branches", () => {
+  const AGENTS = join(__dirname, "fixtures", "agents.jsonl");
+
+  it("indexes every launch in the file, on-thread or not", async () => {
+    const launches = await indexAgentLaunches(AGENTS);
+    expect(launches.get("tu-A")).toBe("aaaa1111bbbb2222"); // result sits off-thread
+    expect(launches.get("tu-B")).toBe("cccc3333dddd4444");
+    expect(launches.size).toBe(2);
+  });
+
+  it("ignores an agentId marker with no Agent call behind it", async () => {
+    const launches = await indexAgentLaunches(AGENTS);
+    expect(launches.has("tu-Z")).toBe(false);
+  });
+
+  it("tags every Agent call in the thread once the index is supplied", async () => {
+    const meta = await indexByUuid(AGENTS);
+    const thread = await buildThread(AGENTS, meta, "r6");
+    const launches = await indexAgentLaunches(AGENTS);
+
+    const withIndex = assembleContext(thread, bp, est, undefined, launches).segments;
+    const tagged = withIndex.filter((s) => s.category === "toolUse" && s.agentId);
+    expect(tagged.map((s) => s.agentId).sort()).toEqual(["aaaa1111bbbb2222", "cccc3333dddd4444"]);
+
+    // without it, only the agent whose result stayed on the thread is reachable
+    const noIndex = assembleContext(thread, bp, est).segments;
+    expect(noIndex.filter((s) => s.category === "toolUse" && s.agentId).length).toBe(1);
   });
 });
 

@@ -179,7 +179,7 @@ function applyBlueprint(segs: Segment[], blueprint: ConfigBlueprint, mk: Mk, gro
 // Single-turn view: only the selected turn's own records (fast; no prior history).
 export function assembleTurn(
   records: RawRecord[], blueprint: ConfigBlueprint, est: TokenEstimator,
-  cal: PayloadCalibration = BUILTIN_CALIBRATION
+  cal: PayloadCalibration = BUILTIN_CALIBRATION, launches?: Map<string, string>
 ): Segment[] {
   const mk = makeMk(est);
   const toolNameById = buildToolNameMap(records);
@@ -187,7 +187,7 @@ export function assembleTurn(
   for (const rec of records) segs.push(...classifyRecord(rec, mk, toolNameById));
   applyBlueprint(segs, blueprint, mk);
   markStrippedThinking(segs);
-  linkSubagents(segs);
+  linkSubagents(segs, launches);
   return segs;
 }
 
@@ -195,16 +195,26 @@ export function assembleTurn(
 // better place to hang the subagent off: it holds the prompt the agent was given,
 // so "what I asked" reads directly into "what it did". For an async agent the
 // result is just launch metadata, which makes it a poor anchor for a whole
-// conversation. A call and its result always land in the same turn (a tool_result
-// comes back within the request that issued it — checked against 65 real Agent
-// calls, none split), so the call is in view whenever the result is.
-function linkSubagents(segs: Segment[]): void {
+// conversation.
+//
+// `launches` is the session-wide tool_use_id -> agentId index. It is needed because
+// async agents launched together fan the transcript out: each result hangs off its own
+// tool_use, so the parentUuid thread keeps the one branch the conversation continued
+// from and drops the other results. Joining only within the records being assembled
+// therefore finds at most one agent no matter how many ran. The in-record join stays
+// as the fallback for callers with no index (and for an agent's own nested calls).
+function linkSubagents(segs: Segment[], launches?: Map<string, string>): void {
   const calls = new Map<string, Segment>();
   for (const s of segs) if (s.category === "toolUse" && s.toolUseId) calls.set(s.toolUseId, s);
   for (const s of segs) {
     if (s.category !== "toolResult" || !s.agentId || !s.toolUseId) continue;
     const call = calls.get(s.toolUseId);
     if (call) { call.agentId = s.agentId; s.agentId = undefined; }
+  }
+  if (!launches) return;
+  for (const [toolUseId, agentId] of launches) {
+    const call = calls.get(toolUseId);
+    if (call && !call.agentId) call.agentId = agentId;
   }
 }
 
@@ -222,7 +232,9 @@ export function assembleSubagent(
   for (const rec of records) segs.push(...classifyRecord(rec, mk, toolNameById));
   for (const s of segs) { s.depth = depth; s.separateContext = true; }
   markStrippedThinking(segs);
-  linkSubagents(segs); // an agent can spawn its own agents — same anchoring one level down
+  // An agent can spawn its own agents; no launch index is needed here because this
+  // reads the agent's whole file rather than a thread, so no result is filtered out.
+  linkSubagents(segs);
   return segs;
 }
 
@@ -294,7 +306,7 @@ function fmt(n?: number): string {
 // first-class segments carrying the real compaction metadata.
 export function assembleContext(
   records: RawRecord[], blueprint: ConfigBlueprint, est: TokenEstimator,
-  cal: PayloadCalibration = BUILTIN_CALIBRATION
+  cal: PayloadCalibration = BUILTIN_CALIBRATION, launches?: Map<string, string>
 ): AssembledContext {
   const mk = makeMk(est);
   const toolNameById = buildToolNameMap(records);
@@ -347,7 +359,7 @@ export function assembleContext(
 
   applyBlueprint(segments, blueprint, mk, SYS);
   markStrippedThinking(segments);
-  linkSubagents(segments);
+  linkSubagents(segments, launches);
 
   // The last real turn group is the "current" turn; everything before it is history.
   const lastTurn = [...groups].reverse().find((g) => g.id.startsWith("g-turn-"));

@@ -5,7 +5,7 @@ import { existsSync, statSync } from "fs";
 import { findSessionsForWorkspace } from "./core/sessionLocator";
 import { indexTurns, readTurn, firstPromptPreview, indexByUuid, buildThread, readAllRecords } from "./core/transcriptParser";
 import { scanBlueprint } from "./core/configScanner";
-import { findSubagentFiles } from "./core/subagentLocator";
+import { findSubagentFiles, indexAgentLaunches } from "./core/subagentLocator";
 import { assembleTurn, assembleContext, assembleSubagent } from "./core/contextAssembler";
 import { buildViewModel } from "./core/viewModel";
 import { HeuristicTokenEstimator } from "./core/tokenEstimator";
@@ -30,6 +30,7 @@ export function activate(context: vscode.ExtensionContext) {
       const turnsCache = new Map<string, TurnIndex[]>();
       const uuidCache = new Map<string, Map<string, UuidMeta>>();
       const subagentCache = new Map<string, Map<string, string>>();
+      const launchCache = new Map<string, Map<string, string>>();
 
       async function rescan(): Promise<void> {
         blueprint = await scanBlueprint(ws);
@@ -38,6 +39,7 @@ export function activate(context: vscode.ExtensionContext) {
         turnsCache.clear();
         uuidCache.clear();
         subagentCache.clear();
+        launchCache.clear();
       }
 
       async function getTurns(sessionId: string): Promise<TurnIndex[]> {
@@ -54,6 +56,16 @@ export function activate(context: vscode.ExtensionContext) {
         const meta = s ? await indexByUuid(s.filePath) : new Map<string, UuidMeta>();
         uuidCache.set(sessionId, meta);
         return meta;
+      }
+
+      // tool_use_id -> agentId for the whole session: async agents launched together
+      // fan out across branches, so this cannot be read off the assembled thread.
+      async function getLaunches(sessionId: string): Promise<Map<string, string>> {
+        if (launchCache.has(sessionId)) return launchCache.get(sessionId)!;
+        const s = byId.get(sessionId);
+        const map = s ? await indexAgentLaunches(s.filePath) : new Map<string, string>();
+        launchCache.set(sessionId, map);
+        return map;
       }
 
       async function getSubagentFiles(sessionId: string): Promise<Map<string, string>> {
@@ -104,15 +116,16 @@ export function activate(context: vscode.ExtensionContext) {
           const turns = await getTurns(sessionId);
           totalTurns = turns.length;
           const t = turns[turnIdx];
+          const launches = await getLaunches(sessionId);
           if (t && mode === "context" && t.uuid) {
             const meta = await getUuidMeta(sessionId);
             const thread = await buildThread(s.filePath, meta, t.uuid);
-            const ctx = assembleContext(thread, blueprint, est);
+            const ctx = assembleContext(thread, blueprint, est, undefined, launches);
             segments = ctx.segments; groups = ctx.groups; usage = ctx.usage;
           } else if (t) {
             const cur = await readTurn(s.filePath, t);
-            segments = assembleTurn(cur, blueprint, est);
-            if (turnIdx > 0) prev = assembleTurn(await readTurn(s.filePath, turns[turnIdx - 1]), blueprint, est);
+            segments = assembleTurn(cur, blueprint, est, undefined, launches);
+            if (turnIdx > 0) prev = assembleTurn(await readTurn(s.filePath, turns[turnIdx - 1]), blueprint, est, undefined, launches);
           }
         }
         if (!segments) segments = assembleTurn([], blueprint, est); // blueprint fallback

@@ -1,0 +1,7 @@
+{"uuid":"r0","parentUuid":null,"type":"user","promptId":"p1","message":{"role":"user","content":"research three things in parallel"}}
+{"uuid":"r1","parentUuid":"r0","type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-A","name":"Agent","input":{"description":"first","prompt":"do A"}}]}}
+{"uuid":"r2","parentUuid":"r1","type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu-B","name":"Agent","input":{"description":"second","prompt":"do B"}}]}}
+{"uuid":"r3","parentUuid":"r1","type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-A","content":"Async agent launched.\nagentId: aaaa1111bbbb2222"}]}}
+{"uuid":"r4","parentUuid":"r2","type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-B","content":"Async agent launched.\nagentId: cccc3333dddd4444"}]}}
+{"uuid":"r5","parentUuid":"r4","type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"both launched"}]}}
+{"uuid":"r6","parentUuid":"r5","type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu-Z","content":"agentId: eeee5555ffff6666"}]}}
