@@ -7,15 +7,15 @@ const est = new HeuristicTokenEstimator();
 const bp: ConfigBlueprint = { providers: [], mcpServers: ["a", "b"] };
 
 describe("assembleTurn", () => {
-  it("prepends estimated base prompt and tool-definitions segments", () => {
+  it("prepends one row for what the transcript never records", () => {
     const segs = assembleTurn([], bp, est);
-    expect(segs[0].category).toBe("baseSystemPrompt");
+    expect(segs[0].category).toBe("unrecorded");
     expect(segs[0].estimated).toBe(true);
-    expect(segs[1].category).toBe("toolDefinitions");
-    // Sized from a real captured request (~85,896 chars of tool schemas), not from
-    // the MCP server count — a proxy capture showed the old per-server guess was wrong.
-    expect(segs[1].estimated).toBe(true);
-    expect(segs[1].tokenEstimate).toBeGreaterThan(15000);
+    // Sized from a real captured request (~9,733 + ~85,896 chars), not from the MCP
+    // server count — a proxy capture showed the old per-server guess was wrong. The
+    // prompt and the schemas are one row: nothing in the log can tell them apart.
+    expect(segs[0].tokenEstimate).toBeGreaterThan(15000);
+    expect(segs.filter((s) => s.estimated).length).toBe(1);
   });
 
   it("decodes a hook attachment into a hook segment", () => {

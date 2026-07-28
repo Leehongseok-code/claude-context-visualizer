@@ -34,7 +34,7 @@ export interface CompactMetadata {
 }
 
 export type SegmentCategory =
-  | "baseSystemPrompt" | "toolDefinitions" | "claudeMd" | "skill"
+  | "unrecorded" | "claudeMd" | "skill"
   | "hook" | "memory" | "mcpInstructions" | "toolUse" | "toolResult"
   | "user" | "assistant" | "thinking" | "systemReminder" | "compactionSummary";
 

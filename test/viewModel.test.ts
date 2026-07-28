@@ -13,7 +13,7 @@ describe("viewModel", () => {
     expect(vm.byCategory[0].category).toBe("hook");
   });
   it("flags large and estimated segments", () => {
-    const vm = buildViewModel([seg("big", "hook", 2000), seg("est", "baseSystemPrompt", 2500, "", true)]);
+    const vm = buildViewModel([seg("big", "hook", 2000), seg("est", "unrecorded", 2500, "", true)]);
     const kinds = vm.wasteFlags.map(f => f.kind);
     expect(kinds).toContain("large");
     expect(kinds).toContain("estimated");
@@ -24,14 +24,14 @@ describe("viewModel", () => {
     expect(vm.wasteFlags.some(f => f.kind === "repeated")).toBe(true);
   });
   it("counts only transcript-backed segments as recorded", () => {
-    const vm = buildViewModel([seg("a", "user", 10), seg("est", "toolDefinitions", 23000, "", true)]);
+    const vm = buildViewModel([seg("a", "user", 10), seg("est", "unrecorded", 23000, "", true)]);
     expect(vm.totalTokens).toBe(23010);
     expect(vm.recordedTokens).toBe(10); // the estimate is not evidence
     expect(vm.measuredTokens).toBeUndefined();
     expect(vm.unrecordedTokens).toBeUndefined();
   });
   it("reports the measured total and what the reconstruction misses", () => {
-    const vm = buildViewModel([seg("a", "user", 400), seg("est", "toolDefinitions", 23000, "", true)], undefined, 1000);
+    const vm = buildViewModel([seg("a", "user", 400), seg("est", "unrecorded", 23000, "", true)], undefined, 1000);
     expect(vm.measuredTokens).toBe(1000);
     expect(vm.recordedTokens).toBe(400);
     expect(vm.unrecordedTokens).toBe(600); // measured - recorded, estimates excluded

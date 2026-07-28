@@ -108,6 +108,7 @@ body {
 }
 .chip-num b { color: var(--vscode-editor-foreground); font-weight: 600; }
 .chip-num.over { border-color: #d97706; color: var(--vscode-editor-foreground); }
+.chip-num.win { border-color: var(--vscode-focusBorder, #007acc); }
 .waste-badge {
   margin-left: auto; padding: 2px 9px; border-radius: 999px;
   background: var(--vscode-inputValidation-warningBackground, #6b4d00);
@@ -117,8 +118,8 @@ body {
 
 /* proportional composition bar */
 .bar { display: flex; width: 100%; height: 14px; border-radius: 7px; overflow: hidden; border: 1px solid var(--border); }
-/* the measured remainder the transcript never recorded — hatched like the estimated rows */
-.bar-seg.unrec { background-image: repeating-linear-gradient(45deg, rgba(128,128,128,0.30) 0 5px, rgba(128,128,128,0.14) 5px 10px); }
+/* headroom left in the model's context window — the bar spans the whole window */
+.bar-seg.free { background: transparent; }
 .bar-seg { height: 100%; transition: filter .15s, opacity .15s; }
 .bar-seg:hover { filter: brightness(1.2); }
 .bar-seg.dim { opacity: 0.18; }

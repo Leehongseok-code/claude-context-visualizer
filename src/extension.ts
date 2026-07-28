@@ -117,6 +117,8 @@ export function activate(context: vscode.ExtensionContext) {
         let prev;
         let groups;
         let usage;
+        let model: string | undefined;
+        let contextWindow: number | undefined;
         let totalTurns = 0;
         if (sessionId && byId.has(sessionId)) {
           const s = byId.get(sessionId)!;
@@ -129,6 +131,7 @@ export function activate(context: vscode.ExtensionContext) {
             const thread = await buildThread(s.filePath, meta, t.uuid);
             const ctx = assembleContext(thread, blueprint, est, undefined, launches);
             segments = ctx.segments; groups = ctx.groups; usage = ctx.usage;
+            model = ctx.model; contextWindow = ctx.contextWindow;
           } else if (t) {
             const cur = await readTurn(s.filePath, t);
             segments = assembleTurn(cur, blueprint, est, undefined, launches);
@@ -138,7 +141,7 @@ export function activate(context: vscode.ExtensionContext) {
         if (!segments) segments = assembleTurn([], blueprint, est); // blueprint fallback
         const vm = buildViewModel(segments, prev, usage?.realContextTokens);
         panel.webview.postMessage({
-          type: "render", vm, groups, usage, mode, sessionId, turn: turnIdx, totalTurns, refreshed,
+          type: "render", vm, groups, usage, model, contextWindow, mode, sessionId, turn: turnIdx, totalTurns, refreshed,
           offThreadAgents: sessionId ? await offThreadAgents(sessionId, segments) : [],
         });
       }

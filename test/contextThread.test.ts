@@ -67,18 +67,25 @@ describe("assembleContext", () => {
     expect(usage!.output).toBe(42);
   });
 
-  it("sizes the system prompt and tool schemas from the measured capture, not a guess", async () => {
+  it("sizes the unrecorded row from the measurement, not from the reference constant", async () => {
     const meta = await indexByUuid(FIX);
     const recs = await buildThread(FIX, meta, "A2");
-    const { segments } = assembleContext(recs, bp, est);
-    const sys = segments.find((s) => s.category === "baseSystemPrompt")!;
-    const tools = segments.find((s) => s.category === "toolDefinitions")!;
-    // 9,733 and 85,896 chars measured from a real captured request
-    expect(sys.tokenEstimate).toBeGreaterThan(2000);
-    expect(tools.tokenEstimate).toBeGreaterThan(15000); // ~20k tokens, not 0
-    expect(tools.note).toContain("85,896");
-    // tool schemas dwarf the system prompt — the old estimate had this backwards
-    expect(tools.tokenEstimate).toBeGreaterThan(sys.tokenEstimate * 5);
+    const { segments, usage } = assembleContext(recs, bp, est);
+    const row = segments.find((s) => s.category === "unrecorded")!;
+    const recorded = segments.reduce((n, s) => (s.estimated ? n : n + s.tokenEstimate), 0);
+    // the remainder of the measured context after everything the transcript holds
+    expect(row.tokenEstimate).toBe(usage!.realContextTokens - recorded);
+    expect(row.tokenEstimate).not.toBe(25820); // not the reference-capture constant
+    expect(row.note).toContain("measured context minus");
+  });
+
+  it("falls back to the reference capture when a turn records no usage", async () => {
+    const meta = await indexByUuid(FIX);
+    const recs = await buildThread(FIX, meta, "A2");
+    const noUsage = recs.map((r) => ({ ...r, message: { ...r.message, usage: undefined } }));
+    const row = assembleContext(noUsage, bp, est).segments.find((s) => s.category === "unrecorded")!;
+    expect(row.tokenEstimate).toBe(25820); // (9,733 + 85,896) chars x 0.27
+    expect(row.note).toContain("reference capture");
   });
 
   it("does not count thinking as input (stripped by context_management)", async () => {
@@ -93,11 +100,11 @@ describe("assembleContext", () => {
     }
   });
 
-  it("still prepends the estimated base prompt + tool definitions in the system group", async () => {
+  it("still prepends the unrecorded row in the system group", async () => {
     const meta = await indexByUuid(FIX);
     const recs = await buildThread(FIX, meta, "A2");
     const { segments, groups } = assembleContext(recs, bp, est);
-    expect(segments[0].category).toBe("baseSystemPrompt");
+    expect(segments[0].category).toBe("unrecorded");
     expect(segments[0].groupId).toBe("g-system");
     expect(groups.find((g) => g.id === "g-system")!.isHistory).toBe(false);
   });

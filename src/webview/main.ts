@@ -43,6 +43,8 @@ interface Group { id: string; label: string; isHistory: boolean; tokens: number;
 interface Usage { realContextTokens: number; cacheRead: number; cacheCreation: number; freshInput: number; output: number; }
 let groups: Group[] = [];
 let usage: Usage | null = null;
+let model: string | null = null;
+let contextWindow: number | null = null; // the answering model's ceiling — the bar's full width
 let viewMode: "context" | "turn" = "context"; // full-context (parentUuid thread) vs this-turn-only
 const collapsed = new Set<string>(); // collapsed group ids
 
@@ -88,6 +90,8 @@ window.addEventListener("message", (e) => {
     totalTurns = msg.totalTurns ?? 0;
     groups = msg.groups || [];
     usage = msg.usage || null;
+    model = msg.model || null;
+    contextWindow = msg.contextWindow || null;
     offThread = msg.offThreadAgents || [];
     viewMode = msg.mode === "turn" ? "turn" : (groups.length ? "context" : "turn");
     wasteBySeg = {};
@@ -339,6 +343,7 @@ function renderHeader(v: ViewModel) {
       `<span class="muted"> — cache-read ${usage.cacheRead.toLocaleString()} · fresh ${usage.freshInput.toLocaleString()} · out ${usage.output.toLocaleString()}</span></span>` +
       waste + `</div>` +
       `<div class="hrow split">` +
+      windowChip(v.measuredTokens) +
       `<span class="chip-num${over ? " over" : ""}" title="Sum of the segments the transcript actually contains, at estimated per-segment sizes. ` +
       `${over ? "Here that sum runs past the measured total, so the estimator is overshooting on this session's content — read the shares below as relative, not absolute."
               : "It tracks the measured total only approximately."}">` +
@@ -356,20 +361,23 @@ function renderHeader(v: ViewModel) {
   }
 }
 
+// How full the model's window is. Only rendered when the model is one whose window we can
+// name — a percentage of an assumed ceiling would be worse than no percentage.
+function windowChip(used: number): string {
+  if (!contextWindow) return "";
+  const share = ((used / contextWindow) * 100).toFixed(1);
+  const label = contextWindow >= 1_000_000 ? `${contextWindow / 1_000_000}M` : `${contextWindow / 1_000}K`;
+  return `<span class="chip-num win" title="Context window of ${escapeHtml(model ?? "this model")}. The bar below spans it.">` +
+    `<b>${share}%</b> of ${label} window</span>`;
+}
+
 function renderBar(v: ViewModel) {
   const bar = document.getElementById("bar")!;
   bar.innerHTML = "";
-  // With a measured total the bar is drawn against it, and the two estimated rows give
-  // way to a single slice sized by measurement — so the width of what the transcript
-  // never recorded is observed rather than asserted.
-  const measured = v.measuredTokens;
-  // max(measured, recorded) so an overshooting estimate fills the bar instead of being
-  // silently clipped by the overflow:hidden track.
-  const total = Math.max(1, measured == null ? v.totalTokens : Math.max(measured, v.recordedTokens));
-  const cats = measured == null
-    ? v.byCategory
-    : v.byCategory.filter((c) => c.category !== "baseSystemPrompt" && c.category !== "toolDefinitions");
-  for (const c of cats) {
+  // The bar spans the answering model's context window, so its fill is how full the
+  // window actually is rather than a normalized breakdown that always looks full.
+  const total = barTotal();
+  for (const c of v.byCategory) {
     const seg = document.createElement("div");
     seg.className = "bar-seg" + (hidden.has(c.category) ? " dim" : "");
     seg.style.width = `${(c.tokens / total) * 100}%`;
@@ -377,13 +385,13 @@ function renderBar(v: ViewModel) {
     seg.title = `${c.category}: ${c.tokens.toLocaleString()} (${pct(c.tokens)})`;
     bar.appendChild(seg);
   }
-  if (measured != null && v.unrecordedTokens) {
-    const seg = document.createElement("div");
-    seg.className = "bar-seg unrec";
-    seg.style.width = `${(v.unrecordedTokens / total) * 100}%`;
-    seg.title = `not in transcript (base prompt, tool schemas, estimator error): ` +
-      `${v.unrecordedTokens.toLocaleString()} (${pct(v.unrecordedTokens)})`;
-    bar.appendChild(seg);
+  const used = v.measuredTokens ?? v.totalTokens;
+  if (contextWindow && used < total) {
+    const free = document.createElement("div");
+    free.className = "bar-seg free";
+    free.style.width = `${((total - used) / total) * 100}%`;
+    free.title = `unused context window: ${(total - used).toLocaleString()} of ${total.toLocaleString()}`;
+    bar.appendChild(free);
   }
   const legend = document.getElementById("legend")!;
   legend.innerHTML =
@@ -678,12 +686,16 @@ function renderDetail(s: any) {
 // ---- utils ----
 // Share of the measured context when one was recorded, so a segment's percentage means
 // "of what the model actually received" rather than "of our own sum of estimates".
+// The denominator the bar and every percentage share: the model's context window when we
+// know it, otherwise whatever this turn actually came to. max() keeps an overshooting
+// estimate inside the track instead of letting overflow:hidden clip it away silently.
+function barTotal(): number {
+  const used = vm ? (vm.measuredTokens ?? vm.totalTokens) : 0;
+  const span = Math.max(used, vm?.recordedTokens ?? 0);
+  return Math.max(1, contextWindow ? Math.max(contextWindow, span) : span);
+}
 function pct(tokens: number): string {
-  const total = vm?.measuredTokens == null
-    ? vm?.totalTokens ?? 0
-    : Math.max(vm.measuredTokens, vm.recordedTokens);
-  if (!total) return "0%";
-  return ((tokens / total) * 100).toFixed(1) + "%";
+  return ((tokens / barTotal()) * 100).toFixed(1) + "%";
 }
 function shortId(id: string): string { return id.length > 12 ? id.slice(0, 8) + "…" : id; }
 // Tidy up slash-command / caveat wrappers so the session preview reads cleanly.

@@ -3,6 +3,7 @@ import { RawRecord, Segment, SegmentCategory, ConfigBlueprint, ContextGroup, Com
 import { TokenEstimator } from "./tokenEstimator";
 import { PayloadCalibration, BUILTIN_CALIBRATION } from "./payloadModel";
 import { extractAgentId, AgentLaunch } from "./subagentLocator";
+import { contextWindowFor, threadModel } from "./modelLimits";
 
 function decodeHook(att: any): { name: string; text: string } {
   const name = att.hookName ?? "unknown";
@@ -146,19 +147,34 @@ function classifyRecord(rec: RawRecord, mk: Mk, toolNameById: Map<string, string
   return out;
 }
 
-function estimatedHeader(mk: Mk, blueprint: ConfigBlueprint, est: TokenEstimator, cal: PayloadCalibration): Segment[] {
-  // Sizes come from a real captured request (see payloadModel.ts), not a guess.
-  const src = cal.source === "calibrated" ? "measured on this machine" : "measured from a reference capture";
-  return [
-    mk("baseSystemPrompt", "base-system-prompt", "", {
-      estimated: true, tokenEstimate: Math.round(cal.systemPromptChars * 0.27),
-      note: `Base system prompt — sent on every request but never written to the transcript. ~${cal.systemPromptChars.toLocaleString()} chars (${src}).`,
-    }),
-    mk("toolDefinitions", "tool-definitions", "", {
-      estimated: true, tokenEstimate: Math.round(cal.toolSchemaChars * 0.27),
-      note: `Tool JSON schemas for ${cal.toolCount} tools — sent on every request, never in the transcript. ~${cal.toolSchemaChars.toLocaleString()} chars (${src}).`,
-    }),
-  ];
+// The base system prompt and the tool JSON schemas are sent on every request and written
+// to the transcript on none of them, so there is no text to show and no way to tell the
+// two apart from the log. They are one row, not two: splitting a number we cannot
+// decompose into named parts would assert a breakdown nothing in the log supports.
+function unrecordedRow(mk: Mk): Segment {
+  return mk("unrecorded", "not-in-transcript", "", { estimated: true, tokenEstimate: 0 });
+}
+
+// Size it from the measurement when the transcript carries one — the remainder after
+// everything the log does record. Only when there is no `usage` does it fall back to the
+// reference capture's constant.
+function sizeUnrecorded(row: Segment, segments: Segment[], usage: ContextUsage | undefined, cal: PayloadCalibration): void {
+  const src = cal.source === "calibrated" ? "measured on this machine" : "a reference capture";
+  const reference = Math.round((cal.systemPromptChars + cal.toolSchemaChars) * 0.27);
+  if (usage) {
+    const recorded = segments.reduce((n, s) => (s.estimated ? n : n + s.tokenEstimate), 0);
+    row.tokenEstimate = Math.max(0, usage.realContextTokens - recorded);
+    row.note =
+      `The measured context minus everything the transcript records. It holds the base system prompt and ` +
+      `the JSON schemas for the session's tools — neither is ever written to the transcript, so their sizes ` +
+      `cannot be separated here — plus whatever the per-segment estimator got wrong. ` +
+      `For scale, ${src} put the prompt and schemas together at ~${reference.toLocaleString()} tokens.`;
+    return;
+  }
+  row.tokenEstimate = reference;
+  row.note =
+    `Base system prompt + tool JSON schemas — sent on every request, never written to the transcript. ` +
+    `Sized at ~${reference.toLocaleString()} tokens from ${src}; this turn records no \`usage\` to measure it against.`;
 }
 
 function applyBlueprint(segs: Segment[], blueprint: ConfigBlueprint, mk: Mk, groupId?: string): void {
@@ -183,11 +199,15 @@ export function assembleTurn(
 ): Segment[] {
   const mk = makeMk(est);
   const toolNameById = buildToolNameMap(records);
-  const segs: Segment[] = [...estimatedHeader(mk, blueprint, est, cal)];
+  const unrecorded = unrecordedRow(mk);
+  const segs: Segment[] = [unrecorded];
   for (const rec of records) segs.push(...classifyRecord(rec, mk, toolNameById));
   applyBlueprint(segs, blueprint, mk);
   markStrippedThinking(segs);
   linkSubagents(segs, launches);
+  // single-turn view: this turn's own records only, so a usage total covering the whole
+  // thread would not describe them — always the reference constant here.
+  sizeUnrecorded(unrecorded, segs, undefined, cal);
   return segs;
 }
 
@@ -261,6 +281,8 @@ export interface AssembledContext {
   segments: Segment[];
   groups: ContextGroup[];
   usage?: ContextUsage; // ground-truth token counts from the last assistant response
+  model?: string;        // the model that answered — its window is the bar's ceiling
+  contextWindow?: number;
 }
 
 // The real context size for a request = input + cache_creation + cache_read tokens.
@@ -315,7 +337,9 @@ export function assembleContext(
 
   const SYS = "g-system";
   groups.push({ id: SYS, label: "System & config", isHistory: false, tokens: 0 });
-  for (const s of estimatedHeader(mk, blueprint, est, cal)) { s.groupId = SYS; segments.push(s); }
+  const unrecorded = unrecordedRow(mk);
+  unrecorded.groupId = SYS;
+  segments.push(unrecorded);
 
   let curGroup: ContextGroup | null = null;
   let pendingCompaction: CompactMetadata | undefined;
@@ -360,6 +384,8 @@ export function assembleContext(
   applyBlueprint(segments, blueprint, mk, SYS);
   markStrippedThinking(segments);
   linkSubagents(segments, launches);
+  const usage = readUsage(records);
+  sizeUnrecorded(unrecorded, segments, usage, cal);
 
   // The last real turn group is the "current" turn; everything before it is history.
   const lastTurn = [...groups].reverse().find((g) => g.id.startsWith("g-turn-"));
@@ -371,5 +397,6 @@ export function assembleContext(
     const g = s.groupId ? byId.get(s.groupId) : undefined;
     if (g) { s.isHistory = g.isHistory; g.tokens += s.tokenEstimate; }
   }
-  return { segments, groups, usage: readUsage(records) };
+  const model = threadModel(records);
+  return { segments, groups, usage, model, contextWindow: contextWindowFor(model) };
 }

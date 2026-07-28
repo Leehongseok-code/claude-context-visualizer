@@ -166,7 +166,7 @@ describe("assembleSubagent", () => {
     // ids must not collide with the parent's seg-N ids
     expect(segs.every((s) => s.id.startsWith("sub1-a1b2c3d4e5f6a7b8-"))).toBe(true);
     // no estimated base-prompt/tool-schema header: those are calibrated for the main agent
-    expect(segs.some((s) => s.category === "baseSystemPrompt")).toBe(false);
+    expect(segs.some((s) => s.category === "unrecorded")).toBe(false);
 
     const cats = segs.map((s) => s.category);
     expect(cats).toContain("user");
