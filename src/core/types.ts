@@ -98,4 +98,7 @@ export interface UuidMeta {
   parentUuid: string | null;
   byteStart: number;
   byteEnd: number;
+  requestId?: string;      // assistant records of one API response share this
+  toolUseIds?: string[];   // tool_use ids this record issues
+  toolResultIds?: string[]; // tool_use ids this record answers
 }

@@ -104,18 +104,28 @@ describe("agent launches across branches", () => {
     expect(launches.some((l) => l.toolUseId === "tu-Z")).toBe(false);
   });
 
-  it("tags every Agent call in the thread once the index is supplied", async () => {
+  it("tags every Agent call in the thread", async () => {
     const meta = await indexByUuid(AGENTS);
     const thread = await buildThread(AGENTS, meta, "r6");
     const launches = await indexAgentLaunches(AGENTS);
 
-    const withIndex = assembleContext(thread, bp, est, undefined, launches).segments;
-    const tagged = withIndex.filter((s) => s.category === "toolUse" && s.agentId);
+    const tagged = assembleContext(thread, bp, est, undefined, launches).segments
+      .filter((s) => s.category === "toolUse" && s.agentId);
     expect(tagged.map((s) => s.agentId).sort()).toEqual(["aaaa1111bbbb2222", "cccc3333dddd4444"]);
+  });
 
-    // without it, only the agent whose result stayed on the thread is reachable
-    const noIndex = assembleContext(thread, bp, est).segments;
-    expect(noIndex.filter((s) => s.category === "toolUse" && s.agentId).length).toBe(1);
+  it("still tags a call whose agent had not reported back by this leaf", async () => {
+    // Viewing a turn from while the agents were still running: the calls are in the
+    // context but their results are not, so the in-thread join has nothing to match.
+    // The session-wide index knows what those calls launched.
+    const meta = await indexByUuid(AGENTS);
+    const thread = await buildThread(AGENTS, meta, "r2");
+    const launches = await indexAgentLaunches(AGENTS);
+
+    expect(assembleContext(thread, bp, est).segments
+      .filter((s) => s.category === "toolUse" && s.agentId).length).toBe(0);
+    expect(assembleContext(thread, bp, est, undefined, launches).segments
+      .filter((s) => s.category === "toolUse" && s.agentId).length).toBe(2);
   });
 });
 
