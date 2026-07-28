@@ -90,6 +90,7 @@ export interface TurnIndex {
   promptPreview: string;
   timestamp?: string;
   uuid?: string;       // last record descending from this turn's prompt — the leaf we reconstruct context from
+  startUuid?: string;  // the prompt record itself — how the sidebar identifies this turn
 }
 
 // Lightweight per-record metadata built in one streaming pass, used to walk the

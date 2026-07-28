@@ -195,8 +195,8 @@ function sizeUnrecorded(row: Segment, segments: Segment[], usage: ContextUsage |
   const src = cal.source === "calibrated" ? "measured on this machine" : "a reference capture";
   const reference = Math.round((cal.systemPromptChars + cal.toolSchemaChars) * 0.27);
   if (usage) {
-    const recorded = segments.reduce((n, s) => (s.estimated ? n : n + s.tokenEstimate), 0);
-    row.tokenEstimate = Math.max(0, usage.realContextTokens - recorded);
+    const claimed = segments.reduce((n, s) => (s === row ? n : n + s.tokenEstimate), 0);
+    row.tokenEstimate = Math.max(0, usage.realContextTokens - claimed);
     row.note =
       `The measured context minus everything the transcript records. It holds the base system prompt and ` +
       `the JSON schemas for the session's tools — neither is ever written to the transcript, so their sizes ` +
@@ -210,13 +210,27 @@ function sizeUnrecorded(row: Segment, segments: Segment[], usage: ContextUsage |
     `Sized at ~${reference.toLocaleString()} tokens from ${src}; this turn records no \`usage\` to measure it against.`;
 }
 
-function applyBlueprint(segs: Segment[], blueprint: ConfigBlueprint, mk: Mk, groupId?: string): void {
+// A provider the thread never showed is added from the workspace instead — marked
+// `estimated`, because reading a file off disk is not the same as observing it in the
+// context. Counting it as recorded put a file we merely assume Claude Code loaded into
+// the one figure that is meant to hold only what the transcript actually shows.
+function applyBlueprint(
+  segs: Segment[], blueprint: ConfigBlueprint, mk: Mk, est: TokenEstimator, groupId?: string
+): void {
   const produced = new Set(segs.map((s) => s.category));
   for (const provider of blueprint.providers) {
     if (provider.kind !== "claudeMd" && provider.kind !== "memory") continue;
     const category: SegmentCategory = provider.kind === "claudeMd" ? "claudeMd" : "memory";
     if (!produced.has(category)) {
-      const seg = mk(category, basename(provider.path), provider.content ?? "", { sourcePath: provider.path });
+      const text = provider.content ?? "";
+      const seg = mk(category, basename(provider.path), text, {
+        sourcePath: provider.path,
+        estimated: true,
+        tokenEstimate: est.estimate(text),
+        note: `Read from the workspace, not observed in this thread. Claude Code loads this file, ` +
+          `but nothing in the transcript confirms it was in *this* context — so it is shown at its ` +
+          `on-disk size and kept out of the reconstructed total.`,
+      });
       if (groupId) { seg.groupId = groupId; }
       segs.push(seg);
     } else {
@@ -235,7 +249,7 @@ export function assembleTurn(
   const unrecorded = unrecordedRow(mk);
   const segs: Segment[] = [unrecorded];
   for (const rec of records) segs.push(...classifyRecord(rec, mk, toolNameById));
-  applyBlueprint(segs, blueprint, mk);
+  applyBlueprint(segs, blueprint, mk, est);
   markStrippedThinking(segs);
   linkSubagents(segs, launches);
   // single-turn view: this turn's own records only, so a usage total covering the whole
@@ -365,7 +379,8 @@ function fmt(n?: number): string {
 // first-class segments carrying the real compaction metadata.
 export function assembleContext(
   records: RawRecord[], blueprint: ConfigBlueprint, est: TokenEstimator,
-  cal: PayloadCalibration = BUILTIN_CALIBRATION, launches?: AgentLaunch[]
+  cal: PayloadCalibration = BUILTIN_CALIBRATION, launches?: AgentLaunch[],
+  turnNumbers?: Map<string, number>
 ): AssembledContext {
   const mk = makeMk(est);
   const toolNameById = buildToolNameMap(records);
@@ -410,15 +425,20 @@ export function assembleContext(
       continue;
     }
     if (isRealUserPrompt(rec)) {
+      // Number groups the way the sidebar numbers turns. Counting prompts as they appear
+      // in the thread drifts from it: a prompt that was abandoned mid-session is a turn in
+      // the file but never reaches this context, so "turn #3" in the crumb was landing
+      // above a group labelled "turn 2".
       turnCounter++;
-      startGroup(`g-turn-${turnCounter}`, `turn ${turnCounter}: ${promptPreview(rec) || "(no text)"}`);
+      const n = (rec.uuid && turnNumbers?.get(rec.uuid)) ?? turnCounter;
+      startGroup(`g-turn-${n}`, `turn ${n}: ${promptPreview(rec) || "(no text)"}`);
     }
     if (!curGroup) startGroup("g-start", "Session start");
     const segs = classifyRecord(rec, mk, toolNameById);
     for (const s of segs) { s.groupId = curGroup!.id; s.groupLabel = curGroup!.label; segments.push(s); }
   }
 
-  applyBlueprint(segments, blueprint, mk, SYS);
+  applyBlueprint(segments, blueprint, mk, est, SYS);
   markStrippedThinking(segments);
   linkSubagents(segments, launches);
   const usage = readUsage(records);

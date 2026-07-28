@@ -19,6 +19,8 @@ export interface ViewModel {
   totalTokens: number;
   /** Sum of segments actually present in the transcript — no estimates mixed in. */
   recordedTokens: number;
+  /** Config the panel supplied from the workspace rather than observed in the thread. */
+  inferredTokens: number;
   /** Exact input size from the response's `usage`, when the transcript carries one. */
   measuredTokens?: number;
   /** measured - recorded: the base prompt, tool schemas, and estimator error. */
@@ -36,6 +38,10 @@ const LARGE_THRESHOLD = 1500;
 export function buildViewModel(segments: Segment[], previous?: Segment[], measured?: number): ViewModel {
   const totalTokens = segments.reduce((n, s) => n + s.tokenEstimate, 0);
   const recordedTokens = segments.reduce((n, s) => (s.estimated ? n : n + s.tokenEstimate), 0);
+  // Estimated, but still something we can name and point at a file — unlike the
+  // unrecorded remainder, which is only a subtraction.
+  const inferredTokens = segments.reduce(
+    (n, s) => (s.estimated && s.category !== "unrecorded" ? n + s.tokenEstimate : n), 0);
 
   const byMap = new Map<SegmentCategory, number>();
   for (const s of segments) byMap.set(s.category, (byMap.get(s.category) ?? 0) + s.tokenEstimate);
@@ -55,8 +61,8 @@ export function buildViewModel(segments: Segment[], previous?: Segment[], measur
   }
 
   return {
-    segments, totalTokens, recordedTokens, byCategory, top, wasteFlags,
+    segments, totalTokens, recordedTokens, inferredTokens, byCategory, top, wasteFlags,
     measuredTokens: measured,
-    unrecordedTokens: measured == null ? undefined : Math.max(0, measured - recordedTokens),
+    unrecordedTokens: measured == null ? undefined : Math.max(0, measured - recordedTokens - inferredTokens),
   };
 }

@@ -129,7 +129,11 @@ export function activate(context: vscode.ExtensionContext) {
           if (t && mode === "context" && t.uuid) {
             const meta = await getUuidMeta(sessionId);
             const thread = await buildThread(s.filePath, meta, t.uuid);
-            const ctx = assembleContext(thread, blueprint, est, undefined, launches);
+            // prompt uuid -> the turn number the sidebar shows, so the group labels and
+            // the breadcrumb agree even when a prompt never reached this context
+            const turnNumbers = new Map<string, number>();
+            for (const x of turns) if (x.startUuid) turnNumbers.set(x.startUuid, x.turn + 1);
+            const ctx = assembleContext(thread, blueprint, est, undefined, launches, turnNumbers);
             segments = ctx.segments; groups = ctx.groups; usage = ctx.usage;
             model = ctx.model; contextWindow = ctx.contextWindow;
           } else if (t) {

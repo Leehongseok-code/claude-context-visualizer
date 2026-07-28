@@ -30,6 +30,17 @@ export async function forEachLine(
   });
 }
 
+// Claude Code writes its own envelopes into user-role records — slash-command
+// expansions and their output, task notifications, reminders, interrupt markers. They
+// carry a promptId and are not always flagged `isMeta`, so a session whose first record
+// is one of them was being previewed as "/mcp mcp" instead of by anything a human wrote.
+const ENVELOPE_RE =
+  /^\s*(<(command-(name|message|args)|local-command-[a-z]+|task-notification|system-reminder|claudeMd)\b|Caveat:|\[Request interrupted)/;
+
+export function isEnvelopeText(text: string): boolean {
+  return ENVELOPE_RE.test(text);
+}
+
 export function userPreview(rec: RawRecord): string {
   const c = rec.message?.content;
   let text = "";
@@ -77,6 +88,7 @@ export async function indexTurns(filePath: string): Promise<TurnIndex[]> {
         promptPreview: userPreview(rec),
         timestamp: rec.timestamp,
         uuid: rec.uuid,
+        startUuid: rec.uuid,
       };
       descendants = rec.uuid ? new Set([rec.uuid]) : new Set();
     }
@@ -236,13 +248,18 @@ export async function firstPromptPreview(filePath: string): Promise<string> {
       try { stream.destroy(); } catch { /* already closed */ }
       resolve(v);
     };
+    // An envelope is remembered but not returned: a session that never gets past its
+    // slash commands is still better previewed by one of them than by nothing.
+    let fallback = "";
     const consume = (line: string): boolean => {
       if (!line.trim()) return false;
       let rec: RawRecord;
       try { rec = JSON.parse(line); } catch { return false; }
       if (rec.type === "user" && rec.promptId && rec.isMeta !== true) {
         const p = userPreview(rec);
-        if (p) { finish(p); return true; }
+        if (!p) return false;
+        if (!isEnvelopeText(p)) { finish(p); return true; }
+        if (!fallback) fallback = p;
       }
       return false;
     };
@@ -255,7 +272,7 @@ export async function firstPromptPreview(filePath: string): Promise<string> {
         if (consume(line)) return;
       }
     });
-    stream.on("end", () => { if (!settled) { consume(buf); finish(""); } });
+    stream.on("end", () => { if (!settled) { consume(buf); finish(fallback); } });
     stream.on("error", () => finish(""));
   });
 }

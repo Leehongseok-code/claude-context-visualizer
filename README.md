@@ -71,10 +71,15 @@ the panel scales by what it measured rather than inventing a ceiling.
 
 ### Type filter chips · ↺ show all · ⊘ hide all
 
-**Click any category chip to hide it** from the bar, the list, and the totals — the
-fastest way to answer "what would this turn cost without the hooks?" `⊘ hide all`
-clears everything so you can add back only the one or two categories you care
-about. Filters persist as you move between turns.
+**Click any category chip to hide it.** The rows leave the list, the bar dims that
+slice, and a `≈ N shown` figure appears in the header — the fastest way to answer
+"what would this turn cost without the hooks?" `⊘ hide all` clears everything so you
+can add back only the one or two categories you care about. Filters persist as you
+move between turns.
+
+The measured total does **not** move when you filter. It is a measurement of what the
+model was actually sent; hiding a category cannot change that. Only the `shown`
+subtotal responds.
 
 ### ⟳ Refresh
 
@@ -226,7 +231,9 @@ CLAUDE.md, 스킬 본문, 훅 주입 내용은 마크다운으로 렌더링되�
 
 ### 타입 필터 칩 · ↺ show all · ⊘ hide all
 
-**카테고리 칩을 클릭하면 막대·목록·합계에서 빠집니다.** *"훅이 없었으면 이 턴은 얼마였을까"*를 가장 빨리 확인하는 방법입니다. `⊘ hide all`로 전부 끈 뒤 보고 싶은 한두 개만 켜는 방식도 됩니다. 필터는 턴을 넘겨도 유지됩니다.
+**카테고리 칩을 클릭하면** 목록에서 행이 빠지고, 막대의 해당 구간이 흐려지고, 헤더에 `≈ N shown` 이 나타납니다. *"훅이 없었으면 이 턴은 얼마였을까"*를 가장 빨리 확인하는 방법입니다. `⊘ hide all`로 전부 끈 뒤 보고 싶은 한두 개만 켜는 방식도 됩니다. 필터는 턴을 넘겨도 유지됩니다.
+
+**실측 총량은 필터로 바뀌지 않습니다.** 모델에게 실제로 전달된 것을 잰 값이라, 카테고리를 숨긴다고 달라질 수 없습니다. `shown` 소계만 반응합니다.
 
 ### ⟳ Refresh
 

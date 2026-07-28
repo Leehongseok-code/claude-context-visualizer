@@ -323,6 +323,7 @@ function selectFirstVisible(v: ViewModel) {
 function toggleCategory(cat: string) {
   if (hidden.has(cat)) hidden.delete(cat); else hidden.add(cat);
   if (!vm) return;
+  renderHeader(vm); // the "shown" subtotal moves with the filters
   renderBar(vm);
   renderList(vm);
   const sel = selectedId ? vm.segments.find((s) => s.id === selectedId) : undefined;
@@ -348,12 +349,17 @@ function renderHeader(v: ViewModel) {
       waste + `</div>` +
       `<div class="hrow split">` +
       windowChip(v.measuredTokens) +
+      shownChip(v) +
       `<span class="chip-num${over ? " over" : ""}" title="Sum of the segments the transcript actually contains, at estimated per-segment sizes. ` +
       `${over ? "Here that sum runs past the measured total, so the estimator is overshooting on this session's content — read the shares below as relative, not absolute."
               : "It tracks the measured total only approximately."}">` +
       `≈ ${v.recordedTokens.toLocaleString()} reconstructed <b>${pctRec}%</b>${over ? " ⚠ over-estimated" : ""}</span>` +
+      (v.inferredTokens
+        ? `<span class="chip-num" title="Config read from the workspace (CLAUDE.md, memory) rather than observed in this thread — shown at its on-disk size.">` +
+          `≈ ${v.inferredTokens.toLocaleString()} inferred from workspace</span>`
+        : "") +
       (over ? "" :
-        `<span class="chip-num" title="Measured minus reconstructed: the base system prompt and tool schemas (never written to the transcript), plus estimator error.">` +
+        `<span class="chip-num" title="Measured minus everything above: the base system prompt and tool schemas (never written to the transcript), plus estimator error.">` +
         `≈ ${v.unrecordedTokens!.toLocaleString()} not in transcript</span>`) +
       `</div>`;
   } else {
@@ -373,6 +379,16 @@ function windowChip(used: number): string {
   const label = contextWindow >= 1_000_000 ? `${contextWindow / 1_000_000}M` : `${contextWindow / 1_000}K`;
   return `<span class="chip-num win" title="Context window of ${escapeHtml(model ?? "this model")}. The bar below spans it.">` +
     `<b>${share}%</b> of ${label} window</span>`;
+}
+
+// With filters on, the only number that can honestly move is the subtotal of what is
+// still shown. The measurement above it is a measurement — hiding a category cannot
+// change what the model was sent — so this appears beside it rather than replacing it.
+function shownChip(v: ViewModel): string {
+  if (!hidden.size) return "";
+  const shown = v.segments.reduce((n, s) => (hidden.has(s.category) ? n : n + s.tokenEstimate), 0);
+  return `<span class="chip-num" title="Total of the categories still shown. The measured figure beside it does not move — hiding a category cannot change what was actually sent.">` +
+    `≈ ${shown.toLocaleString()} shown · ${hidden.size} type${hidden.size > 1 ? "s" : ""} hidden</span>`;
 }
 
 // Offered only when there is a window to scale against — otherwise both modes draw the
@@ -432,7 +448,7 @@ function renderBar(v: ViewModel) {
       if (cat === "__all__" || cat === "__none__") {
         hidden.clear();
         if (cat === "__none__" && vm) for (const c of vm.byCategory) hidden.add(c.category);
-        if (vm) { renderBar(vm); renderList(vm); selectFirstVisible(vm); }
+        if (vm) { renderHeader(vm); renderBar(vm); renderList(vm); selectFirstVisible(vm); }
       } else toggleCategory(cat);
     };
   });
