@@ -35,7 +35,7 @@ export interface CompactMetadata {
 }
 
 export type SegmentCategory =
-  | "unrecorded" | "claudeMd" | "skill"
+  | "unrecorded" | "estimateGap" | "claudeMd" | "skill"
   | "hook" | "memory" | "mcpInstructions" | "toolUse" | "toolResult"
   | "user" | "autoInserted" | "assistant" | "thinking" | "systemReminder" | "compactionSummary";
 

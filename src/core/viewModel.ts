@@ -1,7 +1,7 @@
 import { Segment, SegmentCategory } from "./types";
 
 const COLORS: Record<SegmentCategory, string> = {
-  unrecorded: "#9ca3af", claudeMd: "#2563eb",
+  unrecorded: "#9ca3af", estimateGap: "#c4b5fd", claudeMd: "#2563eb",
   skill: "#7c3aed", hook: "#dc2626", memory: "#0d9488", mcpInstructions: "#d97706",
   toolUse: "#ca8a04", toolResult: "#65a30d", user: "#0891b2", autoInserted: "#78716c",
   assistant: "#4f46e5",

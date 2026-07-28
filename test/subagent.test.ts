@@ -109,7 +109,7 @@ describe("agent launches across branches", () => {
     const thread = await buildThread(AGENTS, meta, "r6");
     const launches = await indexAgentLaunches(AGENTS);
 
-    const tagged = assembleContext(thread, bp, est, undefined, launches).segments
+    const tagged = assembleContext(thread, bp, est, { launches }).segments
       .filter((s) => s.category === "toolUse" && s.agentId);
     expect(tagged.map((s) => s.agentId).sort()).toEqual(["aaaa1111bbbb2222", "cccc3333dddd4444"]);
   });
@@ -124,7 +124,7 @@ describe("agent launches across branches", () => {
 
     expect(assembleContext(thread, bp, est).segments
       .filter((s) => s.category === "toolUse" && s.agentId).length).toBe(0);
-    expect(assembleContext(thread, bp, est, undefined, launches).segments
+    expect(assembleContext(thread, bp, est, { launches }).segments
       .filter((s) => s.category === "toolUse" && s.agentId).length).toBe(2);
   });
 });

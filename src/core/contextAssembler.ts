@@ -4,6 +4,7 @@ import { TokenEstimator } from "./tokenEstimator";
 import { PayloadCalibration, BUILTIN_CALIBRATION } from "./payloadModel";
 import { extractAgentId, AgentLaunch } from "./subagentLocator";
 import { contextWindowFor, threadModel } from "./modelLimits";
+import { SessionCalibration } from "./calibration";
 
 function decodeHook(att: any): { name: string; text: string } {
   const name = att.hookName ?? "unknown";
@@ -188,13 +189,37 @@ function unrecordedRow(mk: Mk): Segment {
   return mk("unrecorded", "not-in-transcript", "", { estimated: true, tokenEstimate: 0 });
 }
 
+// Broken out of the remainder only when a session-wide fit supports it. What it holds is
+// not missing content: it is the weight of rows already on screen that the per-segment
+// estimator sized too small, and calling that "not in transcript" pointed the reader at
+// the wrong explanation for most of the number.
+function estimateGapRow(mk: Mk): Segment {
+  return mk("estimateGap", "estimate gap", "", { estimated: true, tokenEstimate: 0 });
+}
+
 // Size it from the measurement when the transcript carries one — the remainder after
 // everything the log does record. Only when there is no `usage` does it fall back to the
 // reference capture's constant.
-function sizeUnrecorded(row: Segment, segments: Segment[], usage: ContextUsage | undefined, cal: PayloadCalibration): void {
+function sizeUnrecorded(
+  row: Segment, segments: Segment[], usage: ContextUsage | undefined,
+  cal: PayloadCalibration, gap?: Segment, calibration?: SessionCalibration
+): void {
   const src = cal.source === "calibrated" ? "measured on this machine" : "a reference capture";
   const reference = Math.round((cal.systemPromptChars + cal.toolSchemaChars) * 0.27);
   if (usage) {
+    // Charge the gap first, from the fit, then let the named row take what is left, so
+    // the two together still add up to exactly what was measured.
+    if (gap && calibration) {
+      const recorded = segments.reduce((n, s) => (s.estimated ? n : n + s.tokenEstimate), 0);
+      const headroom = Math.max(0, usage.realContextTokens - segments.reduce(
+        (n, s) => (s === row || s === gap ? n : n + s.tokenEstimate), 0));
+      gap.tokenEstimate = Math.min(headroom, Math.round((calibration.slope - 1) * recorded));
+      gap.note =
+        `The difference between this session's measured usage and the sum of the per-segment ` +
+        `estimates above. The content is in the transcript; only the sizing fell short — measured ` +
+        `against this session, the estimator lands at ${Math.round(100 / calibration.slope)}% of the ` +
+        `real count. Fitted over ${calibration.turns} turns, R²=${calibration.r2.toFixed(3)}.`;
+    }
     const claimed = segments.reduce((n, s) => (s === row ? n : n + s.tokenEstimate), 0);
     row.tokenEstimate = Math.max(0, usage.realContextTokens - claimed);
     row.note =
@@ -242,8 +267,9 @@ function applyBlueprint(
 // Single-turn view: only the selected turn's own records (fast; no prior history).
 export function assembleTurn(
   records: RawRecord[], blueprint: ConfigBlueprint, est: TokenEstimator,
-  cal: PayloadCalibration = BUILTIN_CALIBRATION, launches?: AgentLaunch[]
+  opts: AssembleOptions = {}
 ): Segment[] {
+  const { payload: cal = BUILTIN_CALIBRATION, launches } = opts;
   const mk = makeMk(est);
   const toolNameById = buildToolNameMap(records);
   const unrecorded = unrecordedRow(mk);
@@ -382,11 +408,18 @@ function fmt(n?: number): string {
 // Full-context view: the exact ordered message thread Claude received (built by
 // walking parentUuid), grouped by turn, with compaction summaries rendered as
 // first-class segments carrying the real compaction metadata.
+export interface AssembleOptions {
+  payload?: PayloadCalibration;             // sizes from the reference capture
+  launches?: AgentLaunch[];                 // session-wide tool_use_id -> agentId
+  turnNumbers?: Map<string, number>;        // prompt uuid -> the number the sidebar shows
+  calibration?: SessionCalibration;         // this session's own measured-vs-estimated fit
+}
+
 export function assembleContext(
   records: RawRecord[], blueprint: ConfigBlueprint, est: TokenEstimator,
-  cal: PayloadCalibration = BUILTIN_CALIBRATION, launches?: AgentLaunch[],
-  turnNumbers?: Map<string, number>
+  opts: AssembleOptions = {}
 ): AssembledContext {
+  const { payload: cal = BUILTIN_CALIBRATION, launches, turnNumbers, calibration } = opts;
   const mk = makeMk(est);
   const toolNameById = buildToolNameMap(records);
   const segments: Segment[] = [];
@@ -396,6 +429,8 @@ export function assembleContext(
   groups.push({ id: SYS, label: "System & config", isHistory: false, tokens: 0 });
   const unrecorded = unrecordedRow(mk);
   unrecorded.groupId = SYS;
+  const gap = calibration ? estimateGapRow(mk) : undefined;
+  if (gap) { gap.groupId = SYS; segments.push(gap); }
   segments.push(unrecorded);
 
   let curGroup: ContextGroup | null = null;
@@ -447,7 +482,7 @@ export function assembleContext(
   markStrippedThinking(segments);
   linkSubagents(segments, launches);
   const usage = readUsage(records);
-  sizeUnrecorded(unrecorded, segments, usage, cal);
+  sizeUnrecorded(unrecorded, segments, usage, cal, gap, calibration);
 
   // The last real turn group is the "current" turn; everything before it is history.
   const lastTurn = [...groups].reverse().find((g) => g.id.startsWith("g-turn-"));

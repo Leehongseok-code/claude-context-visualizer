@@ -3,11 +3,12 @@ import { homedir } from "os";
 import { join } from "path";
 import { existsSync, statSync } from "fs";
 import { findSessionsForWorkspace } from "./core/sessionLocator";
-import { indexTurns, readTurn, firstPromptPreview, indexByUuid, buildThread, readAllRecords } from "./core/transcriptParser";
+import { indexTurns, readTurn, firstPromptPreview, indexByUuid, buildThread, buildThreads, readAllRecords } from "./core/transcriptParser";
 import { scanBlueprint } from "./core/configScanner";
 import { findSubagentFiles, indexAgentLaunches, offThreadLaunches, AgentLaunch } from "./core/subagentLocator";
 import { assembleTurn, assembleContext, assembleSubagent } from "./core/contextAssembler";
 import { buildViewModel } from "./core/viewModel";
+import { fitCalibration, sampleTurns, SessionCalibration, CalibrationPoint } from "./core/calibration";
 import { HeuristicTokenEstimator } from "./core/tokenEstimator";
 import { TurnIndex, SessionInfo, UuidMeta, ConfigBlueprint, Segment } from "./core/types";
 
@@ -31,6 +32,7 @@ export function activate(context: vscode.ExtensionContext) {
       const uuidCache = new Map<string, Map<string, UuidMeta>>();
       const subagentCache = new Map<string, Map<string, string>>();
       const launchCache = new Map<string, AgentLaunch[]>();
+      const calibrationCache = new Map<string, SessionCalibration | undefined>();
 
       async function rescan(): Promise<void> {
         blueprint = await scanBlueprint(ws);
@@ -40,6 +42,7 @@ export function activate(context: vscode.ExtensionContext) {
         uuidCache.clear();
         subagentCache.clear();
         launchCache.clear();
+        calibrationCache.clear();
       }
 
       async function getTurns(sessionId: string): Promise<TurnIndex[]> {
@@ -66,6 +69,35 @@ export function activate(context: vscode.ExtensionContext) {
         const list = s ? await indexAgentLaunches(s.filePath) : [];
         launchCache.set(sessionId, list);
         return list;
+      }
+
+      // One fit per session, over a spread of its turns. Assembling a thread is not cheap,
+      // so this samples rather than walking every turn, and caches the answer — including
+      // a negative one, so a session that cannot be fitted is not re-attempted per turn.
+      async function getCalibration(sessionId: string): Promise<SessionCalibration | undefined> {
+        if (calibrationCache.has(sessionId)) return calibrationCache.get(sessionId);
+        const s = byId.get(sessionId);
+        const turns = s ? await getTurns(sessionId) : [];
+        let fit: SessionCalibration | undefined;
+        if (s && turns.length >= 5) {
+          const meta = await getUuidMeta(sessionId);
+          const leaves = sampleTurns(turns.length)
+            .map((i) => turns[i]?.uuid)
+            .filter((u): u is string => !!u);
+          const points: CalibrationPoint[] = [];
+          // one pass over the transcript for every sample, not one pass each
+          for (const thread of await buildThreads(s.filePath, meta, leaves)) {
+            const ctx = assembleContext(thread, blueprint, est);
+            if (!ctx.usage) continue;
+            points.push({
+              recorded: ctx.segments.reduce((n, seg) => (seg.estimated ? n : n + seg.tokenEstimate), 0),
+              measured: ctx.usage.realContextTokens,
+            });
+          }
+          fit = fitCalibration(points);
+        }
+        calibrationCache.set(sessionId, fit);
+        return fit;
       }
 
       async function getSubagentFiles(sessionId: string): Promise<Map<string, string>> {
@@ -133,13 +165,14 @@ export function activate(context: vscode.ExtensionContext) {
             // the breadcrumb agree even when a prompt never reached this context
             const turnNumbers = new Map<string, number>();
             for (const x of turns) if (x.startUuid) turnNumbers.set(x.startUuid, x.turn + 1);
-            const ctx = assembleContext(thread, blueprint, est, undefined, launches, turnNumbers);
+            const calibration = await getCalibration(sessionId);
+            const ctx = assembleContext(thread, blueprint, est, { launches, turnNumbers, calibration });
             segments = ctx.segments; groups = ctx.groups; usage = ctx.usage;
             model = ctx.model; contextWindow = ctx.contextWindow;
           } else if (t) {
             const cur = await readTurn(s.filePath, t);
-            segments = assembleTurn(cur, blueprint, est, undefined, launches);
-            if (turnIdx > 0) prev = assembleTurn(await readTurn(s.filePath, turns[turnIdx - 1]), blueprint, est, undefined, launches);
+            segments = assembleTurn(cur, blueprint, est, { launches });
+            if (turnIdx > 0) prev = assembleTurn(await readTurn(s.filePath, turns[turnIdx - 1]), blueprint, est, { launches });
           }
         }
         if (!segments) segments = assembleTurn([], blueprint, est); // blueprint fallback

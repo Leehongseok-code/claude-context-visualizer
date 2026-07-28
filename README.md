@@ -111,12 +111,31 @@ Two categories are easy to misread, so they are worth stating plainly:
   Those are sorted out by what they are (`skill`, `systemReminder`, …) and anything
   left that the transcript flags as not-a-real-user-message lands in
   **`auto-inserted`**, never in `user`.
-- **`not-in-transcript`** is the measured context minus everything the transcript
-  records — the base system prompt and the tool JSON schemas, which are sent on
-  every request and written to none of them, plus whatever the per-segment
-  estimator got wrong. It is hatched because there is no text to show: those bytes
-  exist only in the HTTP request. When a turn records no `usage`, it falls back to a
-  size measured from a reference capture and says so.
+- **`not-in-transcript`** is the base system prompt and the tool JSON schemas —
+  sent on every request, written to none of them. It is hatched because there is no
+  text to show: those bytes exist only in the HTTP request. When a turn records no
+  `usage`, it falls back to a size measured from a reference capture and says so.
+- **`estimate gap`** is *not* missing content. It is the weight of rows already on
+  screen that the per-segment estimator sized too small — the difference between the
+  measurement and the sum of the estimates above it.
+
+  The two are split by fitting `measured ≈ slope × recorded + intercept` across the
+  session's own turns, which holds at R² > 0.99 on most sessions. The intercept is
+  what rides along regardless of conversation length (`not-in-transcript`); the rest
+  grows with the content (`estimate gap`). Keeping them apart matters because the
+  gap is usually the larger of the two — on one session it was 69% of the combined
+  figure, so reading the whole thing as "content the transcript never held" would be
+  wrong about most of it.
+
+  A session gets the split only when the fit stands up: at least 5 turns, R² ≥ 0.9,
+  and a slope above 1. Otherwise the panel keeps them as one combined row rather
+  than asserting a division the data does not support. The fit is sampled across
+  8 turns and cached per session.
+
+This is also why the `not-in-transcript` share jumps after a compaction. Compaction
+summarizes the conversation; it does not shrink the system prompt or the tool
+schemas. The numerator stays put while the denominator collapses, so the share
+rises — that is the arithmetic working, not a glitch.
 
 ## Install
 
@@ -252,7 +271,16 @@ CLAUDE.md, 스킬 본문, 훅 주입 내용은 마크다운으로 렌더링되�
 오해하기 쉬운 두 가지만 짚어둡니다:
 
 - **`user`는 사람이 직접 친 것만입니다.** Claude Code는 스킬 본문, 슬래시 커맨드 확장, 태스크 알림, 리마인더도 user 턴에 써 넣습니다. 그런 것들은 정체에 따라(`skill`, `systemReminder` …) 분류되고, 남은 것 중 트랜스크립트가 "진짜 사용자 메시지가 아니다"라고 표시한 건 전부 **`auto-inserted`**로 갑니다. `user`로는 절대 안 들어갑니다.
-- **`not-in-transcript`**는 실측 컨텍스트에서 트랜스크립트가 기록한 전부를 뺀 나머지입니다 — 매 요청 전송되지만 로그에는 한 번도 안 남는 **base 시스템 프롬프트와 도구 JSON 스키마**, 그리고 세그먼트 추정기의 오차입니다. 빗금으로 표시되는 이유는 **보여줄 텍스트가 없기 때문**입니다. 그 바이트는 HTTP 요청 안에만 존재합니다. 턴에 `usage`가 없으면 기준 캡처에서 잰 크기로 대체하고, 그 사실을 노트에 적습니다.
+- **`not-in-transcript`**는 매 요청 전송되지만 로그에는 한 번도 안 남는 **base 시스템 프롬프트와 도구 JSON 스키마**입니다. 빗금으로 표시되는 이유는 **보여줄 텍스트가 없기 때문**입니다 — 그 바이트는 HTTP 요청 안에만 존재합니다. 턴에 `usage`가 없으면 기준 캡처에서 잰 크기로 대체하고, 그 사실을 노트에 적습니다.
+- **`estimate gap`**은 **없는 내용이 아닙니다.** 화면에 이미 떠 있는 행들이 실제로는 더 큰데 추정기가 작게 잰 분량 — 실측값과 위쪽 추정치 합계의 차이입니다.
+
+  두 값은 세션 자신의 턴들에 `measured ≈ slope × recorded + intercept`를 적합시켜 나눕니다. 대부분 세션에서 R²가 0.99를 넘습니다. **절편**은 대화가 길어져도 그대로인 부분(`not-in-transcript`), **나머지**는 내용과 함께 커지는 부분(`estimate gap`)입니다.
+
+  굳이 나누는 이유는 **보통 gap이 더 크기 때문**입니다. 어떤 세션에선 합계의 **69%** 가 gap이었습니다. 전체를 "로그에 없는 것"으로 읽으면 대부분을 틀리게 이해합니다.
+
+  적합이 신뢰할 만할 때만 나눕니다 — **5턴 이상, R² ≥ 0.9, slope > 1**. 아니면 데이터가 뒷받침하지 않는 구분을 주장하는 대신 예전처럼 한 행으로 둡니다. 적합은 8개 턴을 샘플링해 세션당 한 번 계산하고 캐시합니다.
+
+압축 직후 `not-in-transcript` **비중이 치솟는 것도 같은 이유**입니다. 압축은 대화를 요약하지 시스템 프롬프트와 도구 스키마를 줄이지 않습니다. 분자는 그대로인데 분모만 무너지니 비중이 오르는 것 — 고장이 아니라 산수가 제대로 작동하는 겁니다.
 
 ## 설치
 

@@ -229,6 +229,37 @@ export function resolveThread(
 }
 
 // Materialize the thread's records (root->leaf order) with one filtering pass.
+// Several threads from one pass over the file. `buildThread` re-reads the whole
+// transcript per call, which is fine once but not eight times — sampling turns to
+// calibrate a 190 MB session that way read 1.5 GB and took 3.5 s.
+export async function buildThreads(
+  filePath: string, uuidMeta: Map<string, UuidMeta>, leafUuids: string[]
+): Promise<RawRecord[][]> {
+  const resolved = leafUuids.map((leaf) => resolveThread(uuidMeta, leaf));
+  const want = new Set<string>();
+  for (const r of resolved) for (const u of r.order) want.add(u);
+
+  const byUuid = new Map<string, RawRecord>();
+  await forEachLine(filePath, (line) => {
+    if (!line.trim()) return;
+    let rec: RawRecord;
+    try { rec = JSON.parse(line); } catch { return; }
+    if (rec.uuid && want.has(rec.uuid)) byUuid.set(rec.uuid, rec);
+  });
+
+  // A record replayed in one thread may be on-thread in another, so tagging copies
+  // rather than the shared object.
+  return resolved.map(({ order, replayed }) =>
+    order
+      .map((u) => {
+        const rec = byUuid.get(u);
+        if (!rec) return undefined;
+        return replayed.has(u) ? { ...rec, isReplayed: true } : rec;
+      })
+      .filter((r): r is RawRecord => !!r)
+  );
+}
+
 export async function buildThread(
   filePath: string, uuidMeta: Map<string, UuidMeta>, leafUuid: string
 ): Promise<RawRecord[]> {
