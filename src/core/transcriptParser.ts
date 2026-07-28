@@ -164,6 +164,17 @@ export async function firstPromptPreview(filePath: string): Promise<string> {
   });
 }
 
+// Every record in a file, in write order. Used for subagent transcripts, which are
+// a whole conversation per file and small enough to read in one pass.
+export async function readAllRecords(filePath: string): Promise<RawRecord[]> {
+  const records: RawRecord[] = [];
+  await forEachLine(filePath, (line) => {
+    if (!line.trim()) return;
+    try { records.push(JSON.parse(line)); } catch { /* skip malformed */ }
+  });
+  return records;
+}
+
 export async function readTurn(filePath: string, turn: TurnIndex): Promise<RawRecord[]> {
   const data: string = await new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];

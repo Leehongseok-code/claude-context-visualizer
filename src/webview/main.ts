@@ -35,18 +35,39 @@ let usage: Usage | null = null;
 let viewMode: "context" | "turn" = "context"; // full-context (parentUuid thread) vs this-turn-only
 const collapsed = new Set<string>(); // collapsed group ids
 
+// Subagents run in their own context window, written to a separate transcript file. They
+// hang off the Agent tool_result that launched them and are pulled in only when expanded,
+// so their tokens never touch this turn's totals.
+const subSegs: Record<string, any[]> = {};   // agentId -> that agent's segments
+const subDepth: Record<string, number> = {}; // agentId -> nesting level (1 = direct child)
+const subExpanded = new Set<string>();
+const subLoading = new Set<string>();
+const subMissing = new Set<string>();
+
+// Claude Code keeps appending to the transcript while this panel is open. Refresh re-reads
+// it, so it has to restore what the user had open/selected instead of resetting the view.
+let refreshing = false;
+let lastUpdated: number | null = null;
+let keepSelection: string | null = null;
+let keepScrollY: number | null = null;
+
 window.addEventListener("message", (e) => {
   const msg = e.data;
-  if (msg?.type === "sessions") {
+  if (!msg?.type) return;
+  if (["sessions", "turns", "render"].includes(msg.type)) { refreshing = false; lastUpdated = Date.now(); }
+  if (msg.type === "sessions") {
     sessions = msg.sessions || [];
     if (sessions.length === 0) { sessionId = null; requestLoadTurn(null, -1); } // blueprint
-    else { mode = "sessions"; renderApp(); }
-  } else if (msg?.type === "turns") {
+    else { mode = "sessions"; renderApp(); restoreScroll(); }
+  } else if (msg.type === "turns") {
     turns = msg.turns || [];
     totalTurns = turns.length;
+    sessionId = msg.sessionId ?? sessionId;
     mode = "turns";
     renderApp();
-  } else if (msg?.type === "render") {
+    restoreScroll();
+  } else if (msg.type === "render") {
+    const knownGroups = new Set(groups.map((g) => g.id));
     vm = msg.vm as ViewModel;
     sessionId = msg.sessionId ?? null;
     curTurn = msg.turn;
@@ -57,10 +78,33 @@ window.addEventListener("message", (e) => {
     wasteBySeg = {};
     for (const f of vm.wasteFlags) (wasteBySeg[f.segmentId] ||= []).push(f.kind);
     // default: collapse prior-turn history groups; keep system, compaction summary, and current turn open
-    collapsed.clear();
-    for (const g of groups) if (g.isHistory && !g.id.startsWith("g-compact")) collapsed.add(g.id);
+    if (msg.refreshed) {
+      // a refresh keeps whatever the user expanded, and only applies the default to the
+      // groups that appeared since the last read (e.g. the turn Claude just finished).
+      for (const g of groups) {
+        if (!knownGroups.has(g.id) && g.isHistory && !g.id.startsWith("g-compact")) collapsed.add(g.id);
+      }
+      for (const id of [...collapsed]) if (!groups.some((g) => g.id === id)) collapsed.delete(id);
+    } else {
+      collapsed.clear();
+      for (const g of groups) if (g.isHistory && !g.id.startsWith("g-compact")) collapsed.add(g.id);
+    }
+    // subagent transcripts grow with the session, so drop what was read before; a
+    // refresh re-reads whatever was expanded, a fresh load starts collapsed.
+    for (const k of Object.keys(subSegs)) delete subSegs[k];
+    subLoading.clear();
+    subMissing.clear();
+    if (!msg.refreshed) subExpanded.clear();
     mode = "context";
     renderApp();
+    restoreScroll();
+    for (const aid of subExpanded) requestSubagent(aid, subDepth[aid] ?? 1);
+  } else if (msg.type === "subagent") {
+    const aid: string = msg.agentId;
+    subLoading.delete(aid);
+    if (msg.missing) subMissing.add(aid);
+    else subSegs[aid] = msg.segments || [];
+    if (vm && mode === "context") renderList(vm);
   }
 });
 
@@ -70,6 +114,41 @@ vscodeApi.postMessage({ type: "ready" });
 function requestListTurns(id: string) { sessionId = id; vscodeApi.postMessage({ type: "listTurns", sessionId: id }); }
 function requestLoadTurn(id: string | null, turn: number, m: "context" | "turn" = viewMode) {
   vscodeApi.postMessage({ type: "loadTurn", sessionId: id, turn, mode: m });
+}
+function requestSubagent(agentId: string, depth: number) {
+  if (subLoading.has(agentId) || subSegs[agentId]) return;
+  subLoading.add(agentId);
+  subDepth[agentId] = depth;
+  vscodeApi.postMessage({ type: "loadSubagent", sessionId, agentId, depth });
+}
+function toggleAgent(agentId: string, depth: number) {
+  if (subExpanded.has(agentId)) subExpanded.delete(agentId);
+  else { subExpanded.add(agentId); requestSubagent(agentId, depth); }
+  if (vm) renderList(vm);
+}
+function requestRefresh() {
+  if (refreshing) return;
+  refreshing = true;
+  keepSelection = selectedId;
+  keepScrollY = window.scrollY;
+  renderCrumbs();
+  vscodeApi.postMessage({
+    type: "refresh",
+    view: mode,
+    sessionId,
+    turn: curTurn,
+    mode: viewMode,
+    // parked on the newest turn → follow the tail as the session grows
+    atTail: totalTurns > 0 && curTurn >= totalTurns - 1,
+  });
+  // don't leave the button stuck on "Refreshing…" if the read never answers
+  setTimeout(() => { if (refreshing) { refreshing = false; renderCrumbs(); } }, 15000);
+}
+function restoreScroll() {
+  if (keepScrollY === null) return;
+  const y = keepScrollY;
+  keepScrollY = null;
+  requestAnimationFrame(() => window.scrollTo(0, y));
 }
 
 // ---- render ----
@@ -91,7 +170,14 @@ function renderCrumbs() {
   if (mode === "context" && curTurn >= 0) {
     parts.push(`<span class="sep">▸</span><span class="crumb active">turn #${curTurn + 1}</span>`);
   }
-  c.innerHTML = parts.join("");
+  const stamp = lastUpdated ? `<span class="upd">updated ${new Date(lastUpdated).toLocaleTimeString()}</span>` : "";
+  // the button sits right after the trail so it stays next to what it reloads; the
+  // timestamp is what gets pushed to the far end.
+  c.innerHTML =
+    parts.join("") +
+    `<button id="refreshBtn" class="tb-btn refresh"${refreshing ? " disabled" : ""}` +
+    ` title="Re-read the transcript and config files from disk. Use it while Claude Code is running to pull in new turns.">` +
+    `${refreshing ? "⏳ Refreshing…" : "⟳ Refresh"}</button>` + stamp;
   c.querySelectorAll<HTMLElement>("[data-nav]").forEach((el) => {
     el.onclick = () => {
       const nav = el.dataset.nav;
@@ -99,6 +185,8 @@ function renderCrumbs() {
       else if (nav === "turns" && sessionId) requestListTurns(sessionId);
     };
   });
+  const rb = document.getElementById("refreshBtn");
+  if (rb) rb.onclick = () => requestRefresh();
 }
 
 function renderSessions(view: HTMLElement) {
@@ -181,7 +269,11 @@ function renderContext(view: HTMLElement) {
   renderHeader(vm);
   renderBar(vm);
   renderList(vm);
-  selectFirstVisible(vm);
+  // after a refresh, stay on the segment the user was reading if it's still there
+  const keep = keepSelection;
+  keepSelection = null;
+  if (keep && selectableSegments(vm).some((s) => s.id === keep)) select(keep);
+  else selectFirstVisible(vm);
 }
 
 function grouped(): boolean { return viewMode === "context" && groups.length > 0; }
@@ -190,9 +282,14 @@ function visibleSegments(v: ViewModel) {
   return v.segments.filter((s) => !hidden.has(s.category));
 }
 
+/** Rows actually reachable in the list right now (filters + collapsed groups applied). */
+function selectableSegments(v: ViewModel) {
+  const vis = visibleSegments(v);
+  return grouped() ? vis.filter((s) => !collapsed.has(s.groupId ?? "")) : vis;
+}
+
 function selectFirstVisible(v: ViewModel) {
-  let vis = visibleSegments(v);
-  if (grouped()) vis = vis.filter((s) => !collapsed.has(s.groupId ?? ""));
+  const vis = selectableSegments(v);
   const current = vis.filter((s) => !s.isHistory);
   const pool = current.length ? current : vis;
   const largest = [...pool].sort((a, b) => b.tokenEstimate - a.tokenEstimate)[0];
@@ -264,17 +361,67 @@ function renderBar(v: ViewModel) {
 
 function makeRow(s: any, maxTok: number): HTMLElement {
   const row = document.createElement("div");
-  row.className = "row" + (s.estimated ? " estimated" : "");
+  const depth: number = s.depth ?? 0;
+  row.className = "row" + (s.estimated ? " estimated" : "") + (depth ? " sub" : "");
+  if (depth) row.style.marginLeft = `${depth * 16}px`;
   row.dataset.id = s.id;
   row.style.setProperty("--cat", categoryColor(s.category));
   const flags = wasteBySeg[s.id] || [];
   const badges = flags.map((k) => `<span class="flag" title="${k}">${flagIcon(k)}</span>`).join("");
+  // a subagent's share of *this* turn is meaningless — it was never in this context
+  const size = s.separateContext
+    ? s.tokenEstimate.toLocaleString()
+    : `${s.tokenEstimate.toLocaleString()} · ${pct(s.tokenEstimate)}`;
+  const caret = s.agentId
+    ? `<span class="row-caret" title="show this subagent's own context">${subExpanded.has(s.agentId) ? "▾" : "▸"}</span>`
+    : "";
   row.innerHTML =
-    `<div class="row-head"><span class="row-source">${escapeHtml(s.source)}</span>${badges}` +
-    `<span class="row-tok">${s.tokenEstimate.toLocaleString()} · ${pct(s.tokenEstimate)}</span></div>` +
-    `<div class="row-bar"><div class="row-fill" style="width:${(s.tokenEstimate / maxTok) * 100}%"></div></div>`;
-  row.onclick = () => select(s.id);
+    `<div class="row-head">${caret}<span class="row-source">${escapeHtml(s.source)}</span>${badges}` +
+    `<span class="row-tok">${size}</span></div>` +
+    `<div class="row-bar"><div class="row-fill" style="width:${Math.min(100, (s.tokenEstimate / maxTok) * 100)}%"></div></div>`;
+  row.onclick = (e) => {
+    if (s.agentId && (e.target as HTMLElement).classList.contains("row-caret")) {
+      toggleAgent(s.agentId, depth + 1);
+      return;
+    }
+    select(s.id);
+  };
   return row;
+}
+
+/** A row, followed by the subagent it launched when that one is expanded. */
+function appendRow(list: HTMLElement, s: any, maxTok: number): void {
+  list.appendChild(makeRow(s, maxTok));
+  const aid: string | undefined = s.agentId;
+  if (!aid || !subExpanded.has(aid)) return;
+  const depth = (s.depth ?? 0) + 1;
+  const indent = `margin-left:${depth * 16}px`;
+  const kids = subSegs[aid];
+  if (!kids) {
+    const msg = subMissing.has(aid)
+      ? "no transcript on disk for this agent — it predates per-agent logging"
+      : "reading this agent's transcript…";
+    list.appendChild(note(`sub-note${subMissing.has(aid) ? " miss" : ""}`, indent, msg));
+    return;
+  }
+  const vis = kids.filter((k) => !hidden.has(k.category));
+  const tokens = kids.reduce((n, k) => n + k.tokenEstimate, 0);
+  list.appendChild(note(
+    "sub-head", indent,
+    `⤷ subagent ${aid.slice(0, 8)} · ${kids.length} segments · ~${tokens.toLocaleString()} tokens ` +
+    `(separate context window — not counted in this turn)`
+  ));
+  if (vis.length === 0) { list.appendChild(note("sub-note", indent, "all of this agent's types are filtered out")); return; }
+  const kidMax = Math.max(1, ...vis.map((k) => k.tokenEstimate)); // scaled within the agent
+  for (const k of vis) appendRow(list, k, kidMax);
+}
+
+function note(cls: string, style: string, text: string): HTMLElement {
+  const el = document.createElement("div");
+  el.className = cls;
+  el.setAttribute("style", style);
+  el.textContent = text;
+  return el;
 }
 
 function renderList(v: ViewModel) {
@@ -284,7 +431,7 @@ function renderList(v: ViewModel) {
   if (vis.length === 0) { list.innerHTML = `<div class="muted" style="padding:8px">No segments — all types filtered out.</div>`; return; }
   const maxTok = Math.max(1, ...vis.map((s) => s.tokenEstimate));
   if (grouped()) { renderGroupedList(v, vis, maxTok, list); return; }
-  for (const s of vis) list.appendChild(makeRow(s, maxTok));
+  for (const s of vis) appendRow(list, s, maxTok);
 }
 
 // Full-context view: segments grouped by turn (prior turns collapsible as history,
@@ -305,8 +452,19 @@ function renderGroupedList(v: ViewModel, vis: any[], maxTok: number, list: HTMLE
       `<span class="grp-tok">${g.tokens.toLocaleString()}${tag}</span>`;
     head.onclick = () => { if (collapsed.has(g.id)) collapsed.delete(g.id); else collapsed.add(g.id); renderList(v); };
     list.appendChild(head);
-    if (!isColl) for (const s of segs) list.appendChild(makeRow(s, maxTok));
+    if (!isColl) for (const s of segs) appendRow(list, s, maxTok);
   }
+}
+
+/** Segments live in the view model or, for subagents, in their own lazily-read store. */
+function findSeg(id: string): any {
+  const s = vm?.segments.find((x) => x.id === id);
+  if (s) return s;
+  for (const kids of Object.values(subSegs)) {
+    const k = kids.find((x) => x.id === id);
+    if (k) return k;
+  }
+  return undefined;
 }
 
 function select(id: string) {
@@ -314,7 +472,7 @@ function select(id: string) {
   document.querySelectorAll(".row").forEach((r) => {
     (r as HTMLElement).classList.toggle("selected", (r as HTMLElement).dataset.id === id);
   });
-  const s = vm?.segments.find((x) => x.id === id);
+  const s = findSeg(id);
   rawMode = false; // each newly selected segment starts in auto view
   if (s) renderDetail(s);
 }
@@ -407,7 +565,10 @@ function renderDetail(s: any) {
     `<span class="d-badge" style="background:${categoryColor(s.category)}">${s.category}</span>` +
     `<span class="d-title">${escapeHtml(s.source)}</span></div>` +
     `<div class="d-meta">` +
-    `<span><b>${s.tokenEstimate.toLocaleString()}</b> tokens</span><span>${pct(s.tokenEstimate)} of turn</span>` +
+    `<span><b>${s.tokenEstimate.toLocaleString()}</b> tokens</span>` +
+    (s.separateContext
+      ? `<span class="tag-sub">subagent · separate context window</span>`
+      : `<span>${pct(s.tokenEstimate)} of turn</span>`) +
     (s.estimated ? `<span class="tag-est">estimated · not captured</span>` : "") +
     flags.map((k) => `<span class="d-flag">${flagIcon(k)} ${k}</span>`).join("") +
     `</div>` +

@@ -2,6 +2,7 @@ import { basename } from "path";
 import { RawRecord, Segment, SegmentCategory, ConfigBlueprint, ContextGroup, CompactMetadata } from "./types";
 import { TokenEstimator } from "./tokenEstimator";
 import { PayloadCalibration, BUILTIN_CALIBRATION } from "./payloadModel";
+import { extractAgentId } from "./subagentLocator";
 
 function decodeHook(att: any): { name: string; text: string } {
   const name = att.hookName ?? "unknown";
@@ -69,10 +70,10 @@ function toolResultContent(blockContent: any, toolUseResult: any): ToolResultCon
 
 type Mk = (category: SegmentCategory, source: string, rawText: string, opts?: Partial<Segment>) => Segment;
 
-function makeMk(est: TokenEstimator): Mk {
+function makeMk(est: TokenEstimator, prefix = "seg"): Mk {
   let counter = 0;
   return (category, source, rawText, opts = {}) => ({
-    id: `seg-${counter++}`,
+    id: `${prefix}-${counter++}`,
     category, source, rawText,
     tokenEstimate: opts.estimated ? (opts.tokenEstimate ?? 0) : est.estimate(rawText),
     estimated: opts.estimated ?? false,
@@ -115,6 +116,9 @@ function classifyRecord(rec: RawRecord, mk: Mk, toolNameById: Map<string, string
           const label = name ? toolSource(name, undefined).replace(/^tool:|^skill:|^mcp:/, "") : "tool";
           const { text, imageCount } = toolResultContent(b.content, rec.toolUseResult);
           const seg = mk("toolResult", `result:${name ? label : "tool"}`, text);
+          // An Agent/Task result names the subagent it launched; that id is what
+          // lets the panel pull in that agent's own transcript on demand.
+          if (name === "Agent" || name === "Task") seg.agentId = extractAgentId(text);
           if (imageCount > 0) {
             seg.tokenEstimate += imageCount * IMAGE_TOKEN_ESTIMATE;
             seg.note = `Includes ${imageCount} image${imageCount > 1 ? "s" : ""} — billed as image tokens (~${IMAGE_TOKEN_ESTIMATE.toLocaleString()} each), not as base64 text.`;
@@ -177,6 +181,23 @@ export function assembleTurn(
   const segs: Segment[] = [...estimatedHeader(mk, blueprint, est, cal)];
   for (const rec of records) segs.push(...classifyRecord(rec, mk, toolNameById));
   applyBlueprint(segs, blueprint, mk);
+  markStrippedThinking(segs);
+  return segs;
+}
+
+// A subagent's own transcript. It ran in a separate context window, so its segments
+// are marked `separateContext` and carry a nesting depth — the panel indents them
+// under the Agent call that launched them and keeps them out of this turn's totals.
+// No estimated header here: the base prompt/tool schemas are calibrated for the main
+// agent, and guessing a subagent's would be inventing numbers.
+export function assembleSubagent(
+  records: RawRecord[], est: TokenEstimator, agentId: string, depth: number
+): Segment[] {
+  const mk = makeMk(est, `sub${depth}-${agentId}`);
+  const toolNameById = buildToolNameMap(records);
+  const segs: Segment[] = [];
+  for (const rec of records) segs.push(...classifyRecord(rec, mk, toolNameById));
+  for (const s of segs) { s.depth = depth; s.separateContext = true; }
   markStrippedThinking(segs);
   return segs;
 }

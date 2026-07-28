@@ -38,6 +38,9 @@ body {
 .crumb.active { color: var(--vscode-editor-foreground); cursor: default; font-weight: 600; }
 .crumb:not(.active):hover { text-decoration: underline; }
 .sep { color: var(--muted); }
+.crumbs .upd { margin-left: auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.crumbs .tb-btn.refresh { margin-left: 4px; font-size: 12px; }
+.crumbs .tb-btn.refresh:not(:disabled):hover { background: var(--vscode-button-secondaryHoverBackground, rgba(128,128,128,0.28)); }
 
 /* pick lists (session / turn) */
 .picklist { display: flex; flex-direction: column; gap: 4px; }
@@ -147,6 +150,21 @@ body {
 .row-bar { height: 4px; margin-top: 6px; border-radius: 2px; background: var(--border); overflow: hidden; }
 .row-fill { height: 100%; background: var(--cat); }
 .flag { font-size: 11px; opacity: .85; }
+
+/* subagent rows: indented under the Agent call, dimmed because they belong to a
+   separate context window rather than this turn's */
+.row-caret { color: var(--muted); width: 10px; flex: none; cursor: pointer; }
+.row-caret:hover { color: var(--vscode-editor-foreground); }
+.row.sub { opacity: 0.92; background: rgba(124,58,237,0.06); }
+.row.sub .row-source { font-weight: 500; }
+.sub-head {
+  margin: 6px 0 2px; padding: 4px 8px; border-radius: 4px;
+  border-left: 2px dashed #7c3aed; background: rgba(124,58,237,0.1);
+  color: var(--muted); font-size: 11px;
+}
+.sub-note { margin: 4px 0; padding: 4px 8px; color: var(--muted); font-size: 11px; font-style: italic; }
+.sub-note.miss { color: var(--vscode-inputValidation-warningForeground, #d7a000); }
+.tag-sub { color: #a855f7; font-weight: 600; }
 
 /* right detail */
 .detail { position: sticky; top: 12px; border: 1px solid var(--border); border-radius: 8px; padding: 14px; background: var(--card); min-height: 200px; }
