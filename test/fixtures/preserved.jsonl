@@ -1,0 +1,8 @@
+{"type":"user","uuid":"m1","parentUuid":null,"promptId":"pm1","message":{"role":"user","content":"ancient work that got summarized away"}}
+{"type":"assistant","uuid":"m2","parentUuid":"m1","requestId":"req_old","message":{"role":"assistant","content":[{"type":"text","text":"ancient answer"}]}}
+{"type":"user","uuid":"K1","parentUuid":"m2","promptId":"pk1","message":{"role":"user","content":"kept prompt replayed verbatim"}}
+{"type":"assistant","uuid":"K2","parentUuid":"K1","requestId":"req_keep","message":{"role":"assistant","content":[{"type":"text","text":"kept answer"}]}}
+{"type":"system","subtype":"compact_boundary","uuid":"CB","parentUuid":null,"compactMetadata":{"trigger":"auto","preTokens":900000,"postTokens":40000,"preservedMessages":{"anchorUuid":"SUM","uuids":["K1","K2"],"allUuids":["K1","K2","GONE"]}}}
+{"type":"user","uuid":"SUM","parentUuid":"CB","isCompactSummary":true,"message":{"role":"user","content":"This session is being continued from a previous conversation.\n\nSummary: ancient work."}}
+{"type":"user","uuid":"U1","parentUuid":"SUM","promptId":"p1","message":{"role":"user","content":"work after the compaction"}}
+{"type":"assistant","uuid":"A1","parentUuid":"U1","requestId":"req_new","message":{"role":"assistant","content":[{"type":"text","text":"new answer"}],"usage":{"input_tokens":7,"cache_creation_input_tokens":900,"cache_read_input_tokens":39000,"output_tokens":11}}}

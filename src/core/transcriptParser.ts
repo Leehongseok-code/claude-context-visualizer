@@ -112,11 +112,14 @@ export async function indexByUuid(filePath: string): Promise<Map<string, UuidMet
         else if (b.type === "tool_result" && b.tool_use_id) toolResultIds.push(b.tool_use_id);
       }
     }
+    const pm = rec.compactMetadata?.preservedMessages;
+    const preserved = pm?.allUuids ?? pm?.uuids;
     map.set(rec.uuid, {
       parentUuid: rec.parentUuid ?? null, byteStart, byteEnd,
       requestId: rec.requestId,
       toolUseIds: toolUseIds.length ? toolUseIds : undefined,
       toolResultIds: toolResultIds.length ? toolResultIds : undefined,
+      preservedUuids: preserved?.length ? preserved : undefined,
     });
   });
   return map;
@@ -167,8 +170,40 @@ export function threadUuids(uuidMeta: Map<string, UuidMeta>, leafUuid: string): 
     if ((m.toolResultIds ?? []).some((id) => answered.has(id))) included.add(uuid);
   }
 
-  // write order is conversation order: the log is append-only
-  return [...included].sort((a, b) => uuidMeta.get(a)!.byteStart - uuidMeta.get(b)!.byteStart);
+  // 3. the messages compaction kept verbatim. They sit *before* the boundary, and the
+  //    boundary is a fresh root (parentUuid null), so the walk above never reaches them
+  //    even though the request replays every one. Dropping them understated a compacted
+  //    turn's context several-fold.
+  const replayAfter = new Map<string, number>(); // preserved uuid -> byteStart it sorts behind
+  for (const u of [...included]) {
+    const m = uuidMeta.get(u)!;
+    if (!m.preservedUuids) continue;
+    // the request replays them after the summary that replaced the history before them;
+    // the summary is the boundary's child.
+    let anchor = m.byteStart;
+    for (const [child, cm] of uuidMeta) {
+      if (cm.parentUuid === u) { anchor = cm.byteStart; break; }
+    }
+    for (const p of m.preservedUuids) {
+      if (!uuidMeta.has(p) || included.has(p)) continue;
+      included.add(p);
+      replayAfter.set(p, anchor);
+    }
+  }
+
+  // write order is conversation order (the log is append-only), except replayed messages,
+  // which the request re-sends after the summary rather than at their original position.
+  // Two integer keys, so a replayed run slots between the summary and the next record
+  // even when they are byte-adjacent.
+  const key = (u: string): [number, number] => {
+    const anchor = replayAfter.get(u);
+    const start = uuidMeta.get(u)!.byteStart;
+    return anchor == null ? [start, 0] : [anchor, start];
+  };
+  return [...included].sort((a, b) => {
+    const ka = key(a), kb = key(b);
+    return ka[0] - kb[0] || ka[1] - kb[1];
+  });
 }
 
 // Materialize the thread's records (root->leaf order) with one filtering pass.
