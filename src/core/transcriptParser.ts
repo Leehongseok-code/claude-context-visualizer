@@ -156,6 +156,15 @@ export async function indexByUuid(filePath: string): Promise<Map<string, UuidMet
 // Anything neither rule reaches stays out: a branch abandoned by an edited or re-sent
 // prompt shares no requestId with the thread and answers no call that is in it.
 export function threadUuids(uuidMeta: Map<string, UuidMeta>, leafUuid: string): string[] {
+  return resolveThread(uuidMeta, leafUuid).order;
+}
+
+// `replayed` are the messages compaction re-sent verbatim. They are genuinely in the
+// context, but they were written before the boundary and still carry the `usage` of the
+// request they originally belonged to — so callers must be able to tell them apart.
+export function resolveThread(
+  uuidMeta: Map<string, UuidMeta>, leafUuid: string
+): { order: string[]; replayed: Set<string> } {
   const included = new Set<string>();
   let cur: string | null = leafUuid;
   while (cur && uuidMeta.has(cur) && !included.has(cur)) {
@@ -212,17 +221,18 @@ export function threadUuids(uuidMeta: Map<string, UuidMeta>, leafUuid: string): 
     const start = uuidMeta.get(u)!.byteStart;
     return anchor == null ? [start, 0] : [anchor, start];
   };
-  return [...included].sort((a, b) => {
+  const order = [...included].sort((a, b) => {
     const ka = key(a), kb = key(b);
     return ka[0] - kb[0] || ka[1] - kb[1];
   });
+  return { order, replayed: new Set(replayAfter.keys()) };
 }
 
 // Materialize the thread's records (root->leaf order) with one filtering pass.
 export async function buildThread(
   filePath: string, uuidMeta: Map<string, UuidMeta>, leafUuid: string
 ): Promise<RawRecord[]> {
-  const order = threadUuids(uuidMeta, leafUuid);
+  const { order, replayed } = resolveThread(uuidMeta, leafUuid);
   const want = new Set(order);
   const byUuid = new Map<string, RawRecord>();
   await forEachLine(filePath, (line) => {
@@ -231,7 +241,13 @@ export async function buildThread(
     try { rec = JSON.parse(line); } catch { return; }
     if (rec.uuid && want.has(rec.uuid)) byUuid.set(rec.uuid, rec);
   });
-  return order.map((u) => byUuid.get(u)).filter((r): r is RawRecord => !!r);
+  return order
+    .map((u) => {
+      const rec = byUuid.get(u);
+      if (rec && replayed.has(u)) rec.isReplayed = true;
+      return rec;
+    })
+    .filter((r): r is RawRecord => !!r);
 }
 
 // A cheap one-line summary of what a session is about: its first real user

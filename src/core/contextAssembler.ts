@@ -342,6 +342,11 @@ export interface AssembledContext {
 // after a compaction and made the context look like it had never shrunk.
 function readUsage(records: RawRecord[]): ContextUsage | undefined {
   for (let i = records.length - 1; i >= 0; i--) {
+    // A message compaction replayed still carries the usage of the request it originally
+    // belonged to — a pre-compaction figure. Believing it made a turn whose context had
+    // just collapsed report the size it had before the boundary, and the whole difference
+    // then landed in the not-in-transcript remainder.
+    if (records[i]?.isReplayed) continue;
     const u = (records[i]?.message as any)?.usage;
     if (!u) continue;
     const freshInput = u.input_tokens ?? 0;

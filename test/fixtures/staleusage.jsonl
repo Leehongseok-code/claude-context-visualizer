@@ -1,0 +1,7 @@
+{"type":"user","uuid":"m1","parentUuid":null,"promptId":"pm1","message":{"role":"user","content":"ancient work"}}
+{"type":"user","uuid":"K1","parentUuid":"m1","promptId":"pk1","message":{"role":"user","content":"kept prompt"}}
+{"type":"assistant","uuid":"K2","parentUuid":"K1","requestId":"req_keep","message":{"role":"assistant","content":[{"type":"text","text":"kept answer"}],"usage":{"input_tokens":2,"cache_creation_input_tokens":1395,"cache_read_input_tokens":230351,"output_tokens":9}}}
+{"type":"system","subtype":"compact_boundary","uuid":"CB","parentUuid":null,"compactMetadata":{"trigger":"manual","preTokens":231748,"postTokens":9000,"preservedMessages":{"anchorUuid":"SUM","uuids":["K1","K2"],"allUuids":["K1","K2"]}}}
+{"type":"user","uuid":"SUM","parentUuid":"CB","isCompactSummary":true,"message":{"role":"user","content":"This session is being continued from a previous conversation."}}
+{"type":"user","uuid":"U1","parentUuid":"SUM","promptId":"p1","message":{"role":"user","content":"carry on"}}
+{"type":"assistant","uuid":"A1","parentUuid":"U1","requestId":"req_new","message":{"role":"assistant","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":4,"cache_creation_input_tokens":600,"cache_read_input_tokens":9000,"output_tokens":2}}}

@@ -10,6 +10,7 @@ export interface RawRecord {
   parentUuid?: string | null;
   logicalParentUuid?: string | null;
   isCompactSummary?: boolean;
+  isReplayed?: boolean;      // set by buildThread: compaction re-sent this from before the boundary
   compactMetadata?: CompactMetadata;
   attributionSkill?: string;
   attributionMcpServer?: string;
